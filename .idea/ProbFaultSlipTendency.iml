@@ -5,10 +5,12 @@
     <orderEntry type="jdk" jdkName="Python 3.7 (ProbFaultSlipTendency)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
-  <component name="PyDocumentationSettings">
-    <option name="renderExternalDocumentation" value="true" />
+  <component name="PackageRequirementsSettings">
+    <option name="requirementsPath" value="" />
   </component>
-  <component name="TestRunnerService">
-    <option name="PROJECT_TEST_RUNNER" value="Unittests" />
+  <component name="PyDocumentationSettings">
+    <option name="format" value="NUMPY" />
+    <option name="myDocStringFormat" value="NumPy" />
+    <option name="renderExternalDocumentation" value="true" />
   </component>
 </module>

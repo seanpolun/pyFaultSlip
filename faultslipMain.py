@@ -12,11 +12,22 @@ import shapely as sp
 
 
 def rot_matrix_axis_angle(axis, angle):
-    # generate a 3x3 rotation matrix about a specific rotation axis and angle
-    # inputs: axis: a 1x3 vector specifying the rotation axis
-    #         angle: rotation amount (in radians)
-    # output: rotation matrix: a 3x3 rotation matrix
+    """
+    Creates a 3x3 rotation matrix from rotation axis vector + rotation angle (in radians). Positive sign of input angle
+    indicates a rotation in the counterclockwise direction.
 
+    Parameters
+    ----------
+    axis : numpy.ndarray
+        1x3 vector indicating rotation axis
+    angle : float
+        rotation angle (in radians)
+
+    Returns
+    -------
+    numpy.ndarray
+        3x3 rotation matrix
+    """
     a1 = axis[0]
     a2 = axis[1]
     a3 = axis[2]
@@ -29,15 +40,30 @@ def rot_matrix_axis_angle(axis, angle):
 
 
 def define_principal_stresses(sv, shmin, shmax, hminaz, hmaxaz):
-    # generates cauchy stress tensor from principal stress directions, assumes vertical stress in one direction
-    # rotates sigma1 (maximum principal stress) direction to plane normal
-    # inputs: sv: vertical stress
-    #         shmin: minimum horizontal stress
-    #         shmax: maximum horizontal stress
-    #         hminaz: minimum horizontal stress direction
-    #         hmaxaz: maximum horizontal stress direction
-    #  outputs: princ_stress_tensor: 3x3 stress tensor aligned to principal stress orientations
-    #           axis: sigma-1 stress unit axis (which is rotated to align with plane for normal / shear stress analysis)
+    """
+    Generates cauchy stress tensor from principal stress directions, assumes vertical stress in one direction
+    rotates sigma1 (maximum principal stress) direction to plane normal
+
+    Parameters
+    ----------
+    sv : float
+        vertical stress
+    shmin : float
+        minimum horizontal stress
+    shmax : float
+        maximum horizontal stress
+    hminaz : float
+        minimum horizontal stress direction
+    hmaxaz : float
+        maximum horizontal stress direction
+
+    Returns
+    -------
+    princ_stress_tensor :  numpy.ndarray
+        3x3 stress tensor aligned to principal stress orientations
+    axis : numpy.ndarray
+        Sigma-1 stress unit axis (which is rotated to align with plane for normal / shear stress analysis)
+    """
 
     if abs(hmaxaz - hminaz) != 90:
         raise ValueError('hmin and hmax are not orthogonal')
@@ -73,6 +99,23 @@ def define_principal_stresses(sv, shmin, shmax, hminaz, hmaxaz):
 
 
 def rotate_plane_stress(sigma_1_ax, plane_norm, princ_stress_tensor):
+    """
+    Rotate principal stress tensor (3x3) onto specified plane.
+
+    Parameters
+    ----------
+    sigma_1_ax : numpy.ndarray
+        1x3 unit axis indicating the orientation of the maximum principal stress
+    plane_norm : numpy.ndarray
+        1x3 unit vector indicating normal of the plane to rotate stress onto
+    princ_stress_tensor : numpy.ndarray
+        3x3 matrix with 3 principal stresses on diagonal
+
+    Returns
+    -------
+    numpy.ndarray
+        3x3 matrix of resolved stress components on plane
+    """
     rot_axis = np.cross(plane_norm, sigma_1_ax)
     rot_angle = -1 * np.dot(plane_norm, sigma_1_ax)
     rotmatrix = rot_matrix_axis_angle(rot_axis, rot_angle)
@@ -81,6 +124,22 @@ def rotate_plane_stress(sigma_1_ax, plane_norm, princ_stress_tensor):
 
 
 def point_az(p1, p2):
+    """
+    Determines azimuth between two points (in cartesian coordinates).
+
+    Parameters
+    ----------
+    p1 : tuple
+        Point 1 (in cartesian coordinates)
+    p2 : tuple
+        Point 2 (in cartesian coordinates)
+
+    Returns
+    -------
+    float
+        Azimuth between points (in degrees)
+
+    """
     x1 = p1[0]
     x2 = p2[0]
     y1 = p1[1]
@@ -91,6 +150,22 @@ def point_az(p1, p2):
 
 
 def redistribute_vertices(geom, distance):
+    """
+    Redistribute vertices along a line into a specified spacing.
+
+    Parameters
+    ----------
+    geom : shapely.geometry.LineString
+        Shapely geometry linestring object
+    distance : float
+        Distance between line nodes
+
+    Returns
+    -------
+    shapely.geometry.LineString
+        Re-spaced linestring
+
+    """
     from shapely.geometry import LineString
     if geom.geom_type == 'LineString':
         num_vert = int(round(geom.length / distance))
@@ -108,6 +183,23 @@ def redistribute_vertices(geom, distance):
 
 
 def det_2d_slip_tendency(inFile, inParams):
+    """
+    Compute a deterministic 2d (i.e. where the 2d geometry is only known) slip tendency analysis. Outputs a map, as well
+    as a table with the following schema:
+    (ID : int) (x : float) (y : float) (Slip tendency : float) (Effective slip tendency : float)
+
+    Parameters
+    ----------
+    inFile : str
+        Path to ESRI shapefile (or compatible with geopandas). Should be line objects with a 2d geometry.
+    inParams : dict
+        Dictionary containing fields: shmax, shmin, shmax, shmaxaz, shminaz, dip
+
+    Returns
+    -------
+    numpy.ndarray
+
+    """
     node_length = 50  # 50 m
     shmax = inParams['shmax']
     shmin = inParams['shmin']
@@ -157,12 +249,73 @@ def det_2d_slip_tendency(inFile, inParams):
             flat_out_features.append(outrow)
             fault_out_arr.append(outrow)
         out_features.append(fault_out_arr)
-    # Plot output
-    out_work = np.array(flat_out_features)
-    x = out_work[:, 1].T
-    y = out_work[:, 2].T
-    min_slip_tend = math.floor(min(out_work[:, 3]))
-    max_slip_tend = math.ceil(max(out_work[:, 3]))
+    return out_features
+
+
+def slip_tend_mc_qra(infile, inparams):
+    """
+    Perform 2d (i.e. where the 2d geometry is only known) slip tendency analysis on faults using a monte carlo / QRA
+    methodology (e.g. Walsh and Zoback, 2016, Geology), where the slip hazard is quantified using a cumulative
+    probability distribution relative to the simulated fluid pressure perturbation.
+
+    Parameters
+    ----------
+    infile : str
+        Path to ESRI shapefile (or compatible with geopandas). Should be line objects with a 2d geometry.
+    inparams : dict
+        Dictionary containing fields: shmax, shmin, shmax, shmaxaz, shminaz, dip
+
+    Returns
+    -------
+
+    """
+    nsim = 10000
+    set_unc = 0.05  # use 5% for un-set uncertainty
+    node_length = 50  # 50 m
+    shmax = inparams['shmax']
+    shmin = inparams['shmin']
+    sv = inparams['sv']
+    shmaxaz = inparams['shmaxaz']
+    shminaz = inparams['shminaz']
+    dip = inparams['dip']
+    stress_tensor, sigma1_ax = define_principal_stresses(sv, shmin, shmax, shminaz, shmaxaz)
+    lineaments = gp.GeoSeries.from_file(infile)
+    num_features = len(lineaments)
+    out_features = []
+    flat_out_features = []
+    for i in range(num_features):
+        work_feat = lineaments[i]
+        work_feat_interp = redistribute_vertices(work_feat, node_length)
+        work_feat_inter_coords = work_feat_interp.coords
+        num_nodes = len(work_feat_inter_coords)
+        fault_out_arr = []
+        for j in range(1, num_nodes - 1):
+            point1 = work_feat_inter_coords[j - 1]
+            point2 = work_feat_inter_coords[j + 1]
+            azimuth = point_az(point1, point2)
+            dip_dir = azimuth + 90
+            az_rad = math.radians(azimuth)
+            az_dip_rad = 0
+            dip_dir_az = math.radians(dip_dir)
+            dip_rad = math.radians(dip)
+            v1 = [math.sin(az_rad) * math.cos(az_dip_rad), math.cos(az_rad) * math.cos(az_dip_rad),
+                  math.sin(az_dip_rad)]
+            v2 = [math.sin(dip_dir_az) * math.cos(dip_rad), math.cos(dip_dir_az) * math.cos(dip_rad),
+                  math.sin(dip_rad)]
+            fault_plane_pole = np.cross(v1, v2)
+            plane_stress = rotate_plane_stress(sigma1_ax, fault_plane_pole, stress_tensor)
+            sigma_n = plane_stress[0, 0]
+            sigma_t = plane_stress[2, 0]
+            slip_tendency = sigma_t / sigma_n
+            sigma_n_eff = sigma_n - inparams['pf']
+            slip_tendency_eff = sigma_t / sigma_n_eff
+            outrow = [j, work_feat_inter_coords[j][0], work_feat_inter_coords[j][1], slip_tendency, slip_tendency_eff]
+            flat_out_features.append(outrow)
+            fault_out_arr.append(outrow)
+        out_features.append(fault_out_arr)
+    return out_features
+
+def plot_all(out_features):
     norm1 = mpl.colors.Normalize(vmin=0.5, vmax=1.)
     for i in range(len(out_features)):
         plot_data = np.array(out_features[i])
@@ -176,11 +329,9 @@ def det_2d_slip_tendency(inFile, inParams):
         lc.set_array(slip_tendency.T)
         lc.set_linewidth(2)
         plt.gca().add_collection(lc)
-    plt.xlim(min(x), max(x))
-    plt.ylim(min(y), max(y))
-
+#    plt.xlim(min(x), max(x))
+#    plt.ylim(min(y), max(y))
     plt.show()
-    return out_features
 
 
 if __name__ == '__main__':
