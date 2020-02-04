@@ -221,6 +221,7 @@ def deterministic_slip_tend(pole, stress_tensor, axis, pf, mu):
         slip_tendency_eff = sigma_t / sigma_n_eff
     return slip_tendency, pf1
 
+
 def monte_carlo_slip_tendency(pole, stress_tensor, axis, pf, mu, unc_bounds):
     """
 
