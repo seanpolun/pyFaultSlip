@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import geopandas as gp
 import statsmodels.api as sm
 from numba import jit, njit, prange
-import numpy.random as random
+#import numpy.random as random
 
 # import scipy.stats as stats
 # import shapely as sp
@@ -233,16 +233,22 @@ def deterministic_slip_tend(pole, stress_tensor, axis, pf, mu):
     return slip_tendency, pf1
 
 
+#@njit
 def ecdf(indata):
     # x = np.sort(data)
-    x = np.asarray(indata, dtype=np.float_ )
+    if indata.size == 0:
+        x = np.nan
+        y = np.nan
+        return x, y
+    # x = np.asarray(indata, dtype=np.float_)
+    x = indata
     x.sort(axis=-1)
     n = x.size
     y = np.linspace(1.0 / n, 1, n)
     return x, y
 
 
-@jit
+@jit(parallel=True)
 def monte_carlo_slip_tendency(pole, stress_tensor, axis, pf, mu, unc_bounds=0.05):
     """
 
@@ -278,47 +284,61 @@ def monte_carlo_slip_tendency(pole, stress_tensor, axis, pf, mu, unc_bounds=0.05
     # initialize random vectors / arrays
     # pole_rand = random.normal(pole, pole_unc, (n_sims, 3, 1))
     # generate pole array
-    pole_rand = random.randn(n_sims, 3, 1)
-    pole_rand[:, 0] = (pole_unc[0] * pole_rand[:, 0]) + pole[0]
-    pole_rand[:, 1] = (pole_unc[1] * pole_rand[:, 1]) + pole[1]
-    pole_rand[:, 2] = (pole_unc[2] * pole_rand[:, 2]) + pole[2]
-
-    # stress_rand = random.normal(princ_stress_vec, princ_stress_unc, (n_sims, 3, 1))
-    # generate stress array
-    stress_rand = random.randn(n_sims, 3, 1)
-    stress_rand[:, 0] = (princ_stress_unc[0] * stress_rand[:, 0]) + princ_stress_vec[0]
-    stress_rand[:, 1] = (princ_stress_unc[1] * stress_rand[:, 1]) + princ_stress_vec[1]
-    stress_rand[:, 2] = (princ_stress_unc[2] * stress_rand[:, 2]) + princ_stress_vec[2]
-
-    # axis_rand = random.normal(axis, axis_unc, (n_sims, 3, 1))
-    # generate axis array
-    axis_rand = random.randn(n_sims, 3, 1)
-    axis_rand[:, 0] = (axis_unc[0] * axis_rand[:, 0]) + axis[0]
-    axis_rand[:, 1] = (axis_unc[1] * axis_rand[:, 1]) + axis[1]
-    axis_rand[:, 2] = (axis_unc[2] * axis_rand[:, 2]) + axis[2]
+    # pole_rand = random.randn(n_sims, 3, 1)
+    # pole_rand[:, 0] = (pole_unc[0] * pole_rand[:, 0]) + pole[0]
+    # pole_rand[:, 1] = (pole_unc[1] * pole_rand[:, 1]) + pole[1]
+    # pole_rand[:, 2] = (pole_unc[2] * pole_rand[:, 2]) + pole[2]
+    #
+    # # stress_rand = random.normal(princ_stress_vec, princ_stress_unc, (n_sims, 3, 1))
+    # # generate stress array
+    # stress_rand = random.randn(n_sims, 3, 1)
+    # stress_rand[:, 0] = (princ_stress_unc[0] * stress_rand[:, 0]) + princ_stress_vec[0]
+    # stress_rand[:, 1] = (princ_stress_unc[1] * stress_rand[:, 1]) + princ_stress_vec[1]
+    # stress_rand[:, 2] = (princ_stress_unc[2] * stress_rand[:, 2]) + princ_stress_vec[2]
+    #
+    # # axis_rand = random.normal(axis, axis_unc, (n_sims, 3, 1))
+    # # generate axis array
+    # axis_rand = random.randn(n_sims, 3, 1)
+    # axis_rand[:, 0] = (axis_unc[0] * axis_rand[:, 0]) + axis[0]
+    # axis_rand[:, 1] = (axis_unc[1] * axis_rand[:, 1]) + axis[1]
+    # axis_rand[:, 2] = (axis_unc[2] * axis_rand[:, 2]) + axis[2]
     # pf_rand = random.normal(pf, pf_guess_unc, n_sims)
     # pf_rand = random.uniform(0, (pf + pf_range), n_sims)
-    pf_rand = random.random(n_sims) * (pf + pf_range)
-    mu_rand = (random.randn(n_sims) * mu_unc) + mu
+    # pf_rand = random.random(n_sims) * (pf + pf_range)
+    # mu_rand = (random.randn(n_sims) * mu_unc) + mu
 
     # main simulation loop
-    true_out = []
+    out_data = np.empty((n_sims, 3))
     for i in prange(n_sims):
-        pole1 = pole_rand[i].flatten()
-        stress1 = stress_rand[i] * np.identity(3)
-        axis1 = axis_rand[i].flatten()
-        pf1 = pf_rand[i]
-        mu1 = mu_rand[i]
+
+        pole_rand = np.random.randn(3)
+        pole1 = (pole_unc * pole_rand) + pole
+        # pole1 = pole_rand[i].flatten()
+
+        stress_rand = np.random.randn(3)
+        stress_rand = (princ_stress_unc * stress_rand) + princ_stress_vec
+
+        stress1 = stress_rand * np.identity(3)
+
+        axis_rand = np.random.randn(3)
+        axis1 = (axis_unc * axis_rand) + axis
+        # axis1 = axis_rand[i].flatten()
+
+        pf1 = np.random.random(1) * (pf + pf_range)
+        pf1 = pf1[0]
+        mu1 = (np.random.randn(1) * mu_unc) + mu
+        mu1 = mu1[0]
+
         plane_stress = rotate_plane_stress(axis1, pole1, stress1)
         sigma_n = plane_stress[0, 0]
         sigma_t = plane_stress[2, 0]
         # slip_tendency = sigma_t / sigma_n
         sigma_n_eff = sigma_n - pf1
         slip_tendency_eff = sigma_t / sigma_n_eff
-        if slip_tendency_eff > mu1:
-            true_out.append(pf1)
-
-    return true_out
+        out_data[i, 0] = pf1
+        out_data[i, 1] = mu1
+        out_data[i, 2] = slip_tendency_eff
+    return out_data
 
 
 def slip_tendency_2d(infile, inparams, mode):
@@ -380,8 +400,10 @@ def slip_tendency_2d(infile, inparams, mode):
                                                                    inparams['pf'], inparams['mu'])
                 outrow = [j, work_feat_inter_coords[j][0], work_feat_inter_coords[j][1], slip_tend, fail_pressure]
             elif mode == 'mc':
-                true_out = monte_carlo_slip_tendency(fault_plane_pole, stress_tensor, sigma1_ax, inparams['pf'], inparams['mu'], 0.05)
-                tend_true_ecdf_x, tend_true_ecdf_y = ecdf(true_out)
+                st_out = monte_carlo_slip_tendency(fault_plane_pole, stress_tensor, sigma1_ax, inparams['pf'], inparams['mu'], 0.05)
+                pf_out = st_out[:, 0]
+                true_data = pf_out[st_out[:, 2] > st_out[:, 1]]
+                tend_true_ecdf_x, tend_true_ecdf_y = ecdf(true_data)
                 outrow = [j, work_feat_inter_coords[j][0], work_feat_inter_coords[j][1],
                           tend_true_ecdf_x[tend_true_ecdf_y == 0.5]]
             else:
