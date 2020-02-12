@@ -1,22 +1,17 @@
 #!/usr/bin/env python3
 
-
-# import os
-# import sys
 import math
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import geopandas as gp
-import statsmodels.api as sm
-from numba import jit, njit, prange
-#import numpy.random as random
+import numba
+from shapely.geometry import LineString
 
-# import scipy.stats as stats
-# import shapely as sp
+nsims = 10000
 
 
-@njit
+@numba.njit
 def rot_matrix_axis_angle(axis, angle):
     """
     Creates a 3x3 rotation matrix from rotation axis vector + rotation angle (in radians). Positive sign of input angle
@@ -45,7 +40,7 @@ def rot_matrix_axis_angle(axis, angle):
     return rot_matrix
 
 
-
+@numba.njit
 def define_principal_stresses(sv, shmin, shmax, hminaz, hmaxaz):
     """
     Generates cauchy stress tensor from principal stress directions, assumes vertical stress in one direction
@@ -82,7 +77,7 @@ def define_principal_stresses(sv, shmin, shmax, hminaz, hmaxaz):
         az_rad = 0.
         az_dip_rad = math.pi / 2.
         rotated_axis = np.asarray([math.sin(az_rad) * math.cos(az_dip_rad), math.cos(az_rad) * math.cos(az_dip_rad),
-                        math.sin(az_dip_rad)])
+                                   math.sin(az_dip_rad)])
     elif shmax > sv > shmin:
         sigma1 = shmax
         sigma2 = sv
@@ -90,7 +85,7 @@ def define_principal_stresses(sv, shmin, shmax, hminaz, hmaxaz):
         az_rad = math.radians(shmax)
         az_dip_rad = 0.
         rotated_axis = np.asarray([math.sin(az_rad) * math.cos(az_dip_rad), math.cos(az_rad) * math.cos(az_dip_rad),
-                                math.sin(az_dip_rad)])
+                                   math.sin(az_dip_rad)])
     elif shmax > shmin > sv:
         sigma1 = shmax
         sigma2 = shmin
@@ -98,15 +93,15 @@ def define_principal_stresses(sv, shmin, shmax, hminaz, hmaxaz):
         az_rad = math.radians(shmax)
         az_dip_rad = 0.
         rotated_axis = np.asarray([math.sin(az_rad) * math.cos(az_dip_rad), math.cos(az_rad) * math.cos(az_dip_rad),
-                                math.sin(az_dip_rad)])
+                                   math.sin(az_dip_rad)])
     else:
         raise ValueError('Unable to differentiate principal stress directions')
-    princ_stress_tensor = np.array([[sigma1, 0, 0], [0, sigma2, 0], [0, 0, sigma3]])
-    rotated_axis = np.array(rotated_axis)
+    princ_stress_tensor = np.array([[sigma1, 0., 0.], [0., sigma2, 0.], [0., 0., sigma3]])
+    # rotated_axis = np.array(rotated_axis)
     return princ_stress_tensor, rotated_axis
 
 
-@njit
+@numba.njit
 def rotate_plane_stress(sigma_1_ax, plane_norm, princ_stress_tensor):
     """
     Rotate principal stress tensor (3x3) onto specified plane.
@@ -132,17 +127,21 @@ def rotate_plane_stress(sigma_1_ax, plane_norm, princ_stress_tensor):
     return plane_stress_tensor
 
 
-@njit
-def point_az(p1, p2):
+@numba.njit
+def point_az(x1, x2, y1, y2):
     """
     Determines azimuth between two points (in cartesian coordinates).
 
     Parameters
     ----------
-    p1 : tuple
-        Point 1 (in cartesian coordinates)
-    p2 : tuple
-        Point 2 (in cartesian coordinates)
+    x1 : float
+        point 1 x
+    x2 : float
+        point 2 x
+    y1 : float
+        point 1 y
+    y2 : float
+        point 2 y
 
     Returns
     -------
@@ -150,16 +149,13 @@ def point_az(p1, p2):
         Azimuth between points (in degrees)
 
     """
-    x1 = p1[0]
-    x2 = p2[0]
-    y1 = p1[1]
-    y2 = p2[1]
+
     azimuth1 = math.degrees(math.atan2((x2 - x1), (y2 - y1)))
     azimuth = (azimuth1 + 360) % 360
     return azimuth
 
 
-def redistribute_vertices(geom, distance):
+def redistribute_vertices(geom, min_distance):
     """
     Redistribute vertices along a line into a specified spacing.
 
@@ -176,8 +172,8 @@ def redistribute_vertices(geom, distance):
         Re-spaced linestring
 
     """
-    from shapely.geometry import LineString
     if geom.geom_type == 'LineString':
+        init_nodes = geom.coords.__len__()
         num_vert = int(round(geom.length / distance))
         if num_vert == 0:
             num_vert = 1
@@ -192,7 +188,7 @@ def redistribute_vertices(geom, distance):
         raise ValueError('unhandled geometry %s', (geom.geom_type,))
 
 
-@njit
+@numba.njit
 def deterministic_slip_tend(pole, stress_tensor, axis, pf, mu):
     """
     Compute slip tendency by deterministic methods (e.g. Morris et al., 1996, Geology)
@@ -233,22 +229,21 @@ def deterministic_slip_tend(pole, stress_tensor, axis, pf, mu):
     return slip_tendency, pf1
 
 
-#@njit
+@numba.njit(numba.float64[:, :](numba.float64[:]))
 def ecdf(indata):
     # x = np.sort(data)
     if indata.size == 0:
-        x = np.nan
-        y = np.nan
-        return x, y
+        raise ValueError('Empty Dataset Given')
     # x = np.asarray(indata, dtype=np.float_)
     x = indata
-    x.sort(axis=-1)
+    x.sort()
     n = x.size
-    y = np.linspace(1.0 / n, 1, n)
-    return x, y
+    y = np.linspace(1.0 / nsims, 1, n)
+    out = np.column_stack((x, y))
+    return out
 
 
-@jit(parallel=True)
+@numba.njit(parallel=True)
 def monte_carlo_slip_tendency(pole, stress_tensor, axis, pf, mu, unc_bounds=0.05):
     """
 
@@ -271,7 +266,7 @@ def monte_carlo_slip_tendency(pole, stress_tensor, axis, pf, mu, unc_bounds=0.05
     -------
 
     """
-    n_sims = 10000
+    # n_sims = 10000
     pf_range = 25.
     # initialize uncertainty bounds
     pole_unc = np.abs(pole * unc_bounds)
@@ -281,36 +276,9 @@ def monte_carlo_slip_tendency(pole, stress_tensor, axis, pf, mu, unc_bounds=0.05
     # pf_guess_unc = pf * unc_bounds
     mu_unc = np.abs(mu * unc_bounds)
 
-    # initialize random vectors / arrays
-    # pole_rand = random.normal(pole, pole_unc, (n_sims, 3, 1))
-    # generate pole array
-    # pole_rand = random.randn(n_sims, 3, 1)
-    # pole_rand[:, 0] = (pole_unc[0] * pole_rand[:, 0]) + pole[0]
-    # pole_rand[:, 1] = (pole_unc[1] * pole_rand[:, 1]) + pole[1]
-    # pole_rand[:, 2] = (pole_unc[2] * pole_rand[:, 2]) + pole[2]
-    #
-    # # stress_rand = random.normal(princ_stress_vec, princ_stress_unc, (n_sims, 3, 1))
-    # # generate stress array
-    # stress_rand = random.randn(n_sims, 3, 1)
-    # stress_rand[:, 0] = (princ_stress_unc[0] * stress_rand[:, 0]) + princ_stress_vec[0]
-    # stress_rand[:, 1] = (princ_stress_unc[1] * stress_rand[:, 1]) + princ_stress_vec[1]
-    # stress_rand[:, 2] = (princ_stress_unc[2] * stress_rand[:, 2]) + princ_stress_vec[2]
-    #
-    # # axis_rand = random.normal(axis, axis_unc, (n_sims, 3, 1))
-    # # generate axis array
-    # axis_rand = random.randn(n_sims, 3, 1)
-    # axis_rand[:, 0] = (axis_unc[0] * axis_rand[:, 0]) + axis[0]
-    # axis_rand[:, 1] = (axis_unc[1] * axis_rand[:, 1]) + axis[1]
-    # axis_rand[:, 2] = (axis_unc[2] * axis_rand[:, 2]) + axis[2]
-    # pf_rand = random.normal(pf, pf_guess_unc, n_sims)
-    # pf_rand = random.uniform(0, (pf + pf_range), n_sims)
-    # pf_rand = random.random(n_sims) * (pf + pf_range)
-    # mu_rand = (random.randn(n_sims) * mu_unc) + mu
-
     # main simulation loop
-    out_data = np.empty((n_sims, 3))
-    for i in prange(n_sims):
-
+    out_data = np.empty((nsims, 3))
+    for i in numba.prange(nsims):
         pole_rand = np.random.randn(3)
         pole1 = (pole_unc * pole_rand) + pole
         # pole1 = pole_rand[i].flatten()
@@ -324,10 +292,10 @@ def monte_carlo_slip_tendency(pole, stress_tensor, axis, pf, mu, unc_bounds=0.05
         axis1 = (axis_unc * axis_rand) + axis
         # axis1 = axis_rand[i].flatten()
 
-        pf1 = np.random.random(1) * (pf + pf_range)
-        pf1 = pf1[0]
-        mu1 = (np.random.randn(1) * mu_unc) + mu
-        mu1 = mu1[0]
+        pf1 = np.random.random() * (pf + pf_range)
+        # pf1 = pf1[0]
+        mu1 = (np.random.randn() * mu_unc) + mu
+        # mu1 = mu1[0]
 
         plane_stress = rotate_plane_stress(axis1, pole1, stress1)
         sigma_n = plane_stress[0, 0]
@@ -361,7 +329,7 @@ def slip_tendency_2d(infile, inparams, mode):
     numpy.ndarray
 
     """
-    node_length = 150  # 50 m
+    min_node_distance = 150  # 50 m
     shmax = inparams['shmax']
     shmin = inparams['shmin']
     sv = inparams['sv']
@@ -377,14 +345,14 @@ def slip_tendency_2d(infile, inparams, mode):
     slip_tend_list = []
     for i in range(num_features):
         work_feat = lineaments[i]
-        work_feat_interp = redistribute_vertices(work_feat, node_length)
+        work_feat_interp = redistribute_vertices(work_feat, min_node_distance)
         work_feat_inter_coords = work_feat_interp.coords
         num_nodes = len(work_feat_inter_coords)
         fault_out_arr = []
         for j in range(1, num_nodes - 1):
             point1 = work_feat_inter_coords[j - 1]
             point2 = work_feat_inter_coords[j + 1]
-            azimuth = point_az(point1, point2)
+            azimuth = point_az(point1[0], point2[0], point1[1], point2[1])
             dip_dir = azimuth + 90
             az_rad = math.radians(azimuth)
             az_dip_rad = 0
@@ -400,12 +368,13 @@ def slip_tendency_2d(infile, inparams, mode):
                                                                    inparams['pf'], inparams['mu'])
                 outrow = [j, work_feat_inter_coords[j][0], work_feat_inter_coords[j][1], slip_tend, fail_pressure]
             elif mode == 'mc':
-                st_out = monte_carlo_slip_tendency(fault_plane_pole, stress_tensor, sigma1_ax, inparams['pf'], inparams['mu'], 0.05)
+                st_out = monte_carlo_slip_tendency(fault_plane_pole, stress_tensor, sigma1_ax, inparams['pf'],
+                                                   inparams['mu'], 0.05)
                 pf_out = st_out[:, 0]
                 true_data = pf_out[st_out[:, 2] > st_out[:, 1]]
-                tend_true_ecdf_x, tend_true_ecdf_y = ecdf(true_data)
+                tend_out = ecdf(true_data)
                 outrow = [j, work_feat_inter_coords[j][0], work_feat_inter_coords[j][1],
-                          tend_true_ecdf_x[tend_true_ecdf_y == 0.5]]
+                          tend_out[:, 0][tend_out[:, 1] == 0.5]]
             else:
                 raise ValueError('Cannot resolve calculation mode / not implemented yet')
             flat_out_features.append(outrow)
@@ -439,5 +408,5 @@ if __name__ == '__main__':
     inParams_test = {'dip': 90., 'dipunc': 10., 'shmax': 295.0, 'shMunc': 25.0, 'shmin': 77.0, 'shmiunc': 25.0,
                      'sv': 130.0, 'svunc': 25.0,
                      'depth': 5.0, 'shmaxaz': 75.0, 'shminaz': 165.0, 'azunc': 15.0, 'pf': 50.0, 'pfunc': 15.0,
-                     'mu': 0.5, 'mu_unc': 0.05}
+                     'mu': 0.7, 'mu_unc': 0.05}
     results = slip_tendency_2d(inFile_test, inParams_test, mode='mc')
