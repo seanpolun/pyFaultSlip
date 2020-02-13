@@ -155,6 +155,7 @@ def point_az(x1, x2, y1, y2):
     return azimuth
 
 
+@numba.jit(forceobj=True)
 def redistribute_vertices(geom, min_distance):
     """
     Redistribute vertices along a line into a specified spacing.
@@ -172,16 +173,22 @@ def redistribute_vertices(geom, min_distance):
         Re-spaced linestring
 
     """
+    node_multiplier = 11
     if geom.geom_type == 'LineString':
         init_nodes = geom.coords.__len__()
-        num_vert = int(round(geom.length / distance))
+        mult_nodes = init_nodes * node_multiplier
+        max_num_vert = int(round(geom.length / min_distance))
+        if mult_nodes > max_num_vert:
+            num_vert = max_num_vert
+        else:
+            num_vert = mult_nodes
         if num_vert == 0:
-            num_vert = 1
+            num_vert = init_nodes
         return LineString(
             [geom.interpolate(float(n) / num_vert, normalized=True)
              for n in range(num_vert + 1)])
     elif geom.geom_type == 'MultiLineString':
-        parts = [redistribute_vertices(part, distance)
+        parts = [redistribute_vertices(part, min_distance)
                  for part in geom]
         return type(geom)([p for p in parts if not p.is_empty])
     else:
@@ -309,6 +316,7 @@ def monte_carlo_slip_tendency(pole, stress_tensor, axis, pf, mu, unc_bounds=0.05
     return out_data
 
 
+@numba.jit(forceobj=True, parallel=True)
 def slip_tendency_2d(infile, inparams, mode):
     """
     Compute a deterministic 2d (i.e. where the 2d geometry is only known) slip tendency analysis. Outputs a map, as well
