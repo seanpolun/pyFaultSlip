@@ -10,6 +10,7 @@ from shapely.geometry import LineString
 
 nsims = 10000
 
+# TODO: Implement 3D slip tendency analysis
 
 @numba.njit
 def rot_matrix_axis_angle(axis, angle):
@@ -273,6 +274,9 @@ def monte_carlo_slip_tendency(pole, stress_tensor, axis, pf, mu, unc_bounds=0.05
     -------
 
     """
+    # TODO: Rewrite monte_carlo_slip_tendency() to take advantage of numba's CUDA support, may speed up simulation more,
+    #  currently takes ~2s per full lineament simulation, may get bogged down on detailed 3d faults
+
     # n_sims = 10000
     pf_range = 25.
     # initialize uncertainty bounds
@@ -316,7 +320,7 @@ def monte_carlo_slip_tendency(pole, stress_tensor, axis, pf, mu, unc_bounds=0.05
     return out_data
 
 
-@numba.jit(forceobj=True, parallel=True)
+#@numba.jit(forceobj=True, parallel=True)
 def slip_tendency_2d(infile, inparams, mode):
     """
     Compute a deterministic 2d (i.e. where the 2d geometry is only known) slip tendency analysis. Outputs a map, as well
@@ -350,16 +354,22 @@ def slip_tendency_2d(infile, inparams, mode):
     num_features = len(lineaments)
     out_features = []
     flat_out_features = []
-    slip_tend_list = []
     for i in range(num_features):
         work_feat = lineaments[i]
         work_feat_interp = redistribute_vertices(work_feat, min_node_distance)
         work_feat_inter_coords = work_feat_interp.coords
         num_nodes = len(work_feat_inter_coords)
         fault_out_arr = []
-        for j in range(1, num_nodes - 1):
-            point1 = work_feat_inter_coords[j - 1]
-            point2 = work_feat_inter_coords[j + 1]
+        for j in range(num_nodes):
+            if j == 0:
+                point1 = work_feat_inter_coords[j]
+                point2 = work_feat_inter_coords[j + 1]
+            elif j == (num_nodes - 1):
+                point1 = work_feat_inter_coords[j - 1]
+                point2 = work_feat_inter_coords[j]
+            else:
+                point1 = work_feat_inter_coords[j - 1]
+                point2 = work_feat_inter_coords[j + 1]
             azimuth = point_az(point1[0], point2[0], point1[1], point2[1])
             dip_dir = azimuth + 90
             az_rad = math.radians(azimuth)
@@ -381,8 +391,9 @@ def slip_tendency_2d(infile, inparams, mode):
                 pf_out = st_out[:, 0]
                 true_data = pf_out[st_out[:, 2] > st_out[:, 1]]
                 tend_out = ecdf(true_data)
+                ind_50 = (np.abs(tend_out[:, 1] - 0.5)).argmin()
                 outrow = [j, work_feat_inter_coords[j][0], work_feat_inter_coords[j][1],
-                          tend_out[:, 0][tend_out[:, 1] == 0.5]]
+                          tend_out[ind_50, 0]]
             else:
                 raise ValueError('Cannot resolve calculation mode / not implemented yet')
             flat_out_features.append(outrow)
@@ -400,7 +411,7 @@ def plot_all(out_features):
         y1 = plot_data[:, 2].T
         points = np.array([x1, y1]).T.reshape(-1, 1, 2)
         segments = np.concatenate([points[:-1], points[1:]], axis=1)
-        slip_tendency = plot_data[:, 3]
+        slip_tendency = plot_data[:, 2]
 
         lc = mpl.collections.LineCollection(segments, cmap=plt.get_cmap('jet_r'), norm=norm1)
         lc.set_array(slip_tendency.T)
@@ -418,3 +429,4 @@ if __name__ == '__main__':
                      'depth': 5.0, 'shmaxaz': 75.0, 'shminaz': 165.0, 'azunc': 15.0, 'pf': 50.0, 'pfunc': 15.0,
                      'mu': 0.7, 'mu_unc': 0.05}
     results = slip_tendency_2d(inFile_test, inParams_test, mode='mc')
+    plot_all_det(results)
