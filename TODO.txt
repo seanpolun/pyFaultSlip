@@ -1,1 +1,0 @@
-Rewrite monte_carlo_slip_tendency() to take advantage of numba CUDA support (2s per lineament is really not too bad, but it might get bad for detailed 3d models
