@@ -12,6 +12,7 @@ nsims = 10000
 
 # TODO: Implement 3D slip tendency analysis
 
+
 @numba.njit
 def rot_matrix_axis_angle(axis, angle):
     """
@@ -174,7 +175,7 @@ def redistribute_vertices(geom, min_distance):
         Re-spaced linestring
 
     """
-    node_multiplier = 11
+    node_multiplier = 101
     if geom.geom_type == 'LineString':
         init_nodes = geom.coords.__len__()
         mult_nodes = init_nodes * node_multiplier
@@ -241,7 +242,11 @@ def deterministic_slip_tend(pole, stress_tensor, axis, pf, mu):
 def ecdf(indata):
     # x = np.sort(data)
     if indata.size == 0:
-        raise ValueError('Empty Dataset Given')
+        x = np.array([0., 0., 0.])
+        y = np.array([0., 0.5, 1.])
+        out = np.column_stack((x, y))
+        return out
+        # raise ValueError('Empty Dataset Given')
     # x = np.asarray(indata, dtype=np.float_)
     x = indata
     x.sort()
@@ -292,6 +297,7 @@ def monte_carlo_slip_tendency(pole, stress_tensor, axis, pf, mu, unc_bounds=0.05
     for i in numba.prange(nsims):
         pole_rand = np.random.randn(3)
         pole1 = (pole_unc * pole_rand) + pole
+        pole1 = pole1 / np.linalg.norm(pole1)
         # pole1 = pole_rand[i].flatten()
 
         stress_rand = np.random.randn(3)
@@ -301,6 +307,7 @@ def monte_carlo_slip_tendency(pole, stress_tensor, axis, pf, mu, unc_bounds=0.05
 
         axis_rand = np.random.randn(3)
         axis1 = (axis_unc * axis_rand) + axis
+        axis1 = axis1 / np.linalg.norm(axis1)
         # axis1 = axis_rand[i].flatten()
 
         pf1 = np.random.random() * (pf + pf_range)
@@ -341,7 +348,7 @@ def slip_tendency_2d(infile, inparams, mode):
     numpy.ndarray
 
     """
-    min_node_distance = 150  # 50 m
+    # min_node_distance = 150  # 50 m
     shmax = inparams['shmax']
     shmin = inparams['shmin']
     sv = inparams['sv']
@@ -350,26 +357,32 @@ def slip_tendency_2d(infile, inparams, mode):
     dip = inparams['dip']
     stress_tensor, sigma1_ax = define_principal_stresses(sv, shmin, shmax, shminaz, shmaxaz)
     lineaments = gp.GeoSeries.from_file(infile)
+    bounds = lineaments.total_bounds
     #    lin_crs = lineaments.crs
     num_features = len(lineaments)
     out_features = []
     flat_out_features = []
     for i in range(num_features):
         work_feat = lineaments[i]
-        work_feat_interp = redistribute_vertices(work_feat, min_node_distance)
-        work_feat_inter_coords = work_feat_interp.coords
-        num_nodes = len(work_feat_inter_coords)
+        # work_feat_interp = redistribute_vertices(work_feat, min_node_distance)
+        # work_feat_inter_coords = work_feat_interp.coords
+        # num_nodes = len(work_feat_inter_coords)
+        work_feat_coords = work_feat.coords
+        num_nodes = len(work_feat_coords)
+        num_segs = num_nodes - 1
         fault_out_arr = []
-        for j in range(num_nodes):
-            if j == 0:
-                point1 = work_feat_inter_coords[j]
-                point2 = work_feat_inter_coords[j + 1]
-            elif j == (num_nodes - 1):
-                point1 = work_feat_inter_coords[j - 1]
-                point2 = work_feat_inter_coords[j]
-            else:
-                point1 = work_feat_inter_coords[j - 1]
-                point2 = work_feat_inter_coords[j + 1]
+        for j in range(num_segs):
+            # if j == 0:
+            #     point1 = work_feat_inter_coords[j]
+            #     point2 = work_feat_inter_coords[j + 1]
+            # elif j == (num_nodes - 1):
+            #     point1 = work_feat_inter_coords[j - 1]
+            #     point2 = work_feat_inter_coords[j]
+            # else:
+            #     point1 = work_feat_inter_coords[j - 1]
+            #     point2 = work_feat_inter_coords[j + 1]
+            point1 = work_feat_coords[j]
+            point2 = work_feat_coords[j + 1]
             azimuth = point_az(point1[0], point2[0], point1[1], point2[1])
             dip_dir = azimuth + 90
             az_rad = math.radians(azimuth)
@@ -384,7 +397,7 @@ def slip_tendency_2d(infile, inparams, mode):
             if mode == 'det':
                 slip_tend, fail_pressure = deterministic_slip_tend(fault_plane_pole, stress_tensor, sigma1_ax,
                                                                    inparams['pf'], inparams['mu'])
-                outrow = [j, work_feat_inter_coords[j][0], work_feat_inter_coords[j][1], slip_tend, fail_pressure]
+                outrow = [j, work_feat_coords[j][0], work_feat_coords[j][1], work_feat_coords[j + 1][0], work_feat_coords[j + 1][1], slip_tend, fail_pressure]
             elif mode == 'mc':
                 st_out = monte_carlo_slip_tendency(fault_plane_pole, stress_tensor, sigma1_ax, inparams['pf'],
                                                    inparams['mu'], 0.05)
@@ -392,33 +405,44 @@ def slip_tendency_2d(infile, inparams, mode):
                 true_data = pf_out[st_out[:, 2] > st_out[:, 1]]
                 tend_out = ecdf(true_data)
                 ind_50 = (np.abs(tend_out[:, 1] - 0.5)).argmin()
-                outrow = [j, work_feat_inter_coords[j][0], work_feat_inter_coords[j][1],
-                          tend_out[ind_50, 0]]
+                outrow = [j, work_feat_coords[j][0], work_feat_coords[j][1], work_feat_coords[j + 1][0],
+                          work_feat_coords[j + 1][1], tend_out[ind_50, 0]]
             else:
                 raise ValueError('Cannot resolve calculation mode / not implemented yet')
             flat_out_features.append(outrow)
             fault_out_arr.append(outrow)
         out_features.append(fault_out_arr)
         print(["Finished object# ", str(i + 1)])
-    return out_features
+    return out_features, bounds
 
 
-def plot_all(out_features):
-    norm1 = mpl.colors.Normalize(vmin=0.5, vmax=1.)
+def plot_all(out_features, flag, plot_bounds):
+    if flag == 'det':
+        norm1 = mpl.colors.Normalize(vmin=0.5, vmax=1.)
+    elif flag == 'mc':
+        norm1 = mpl.colors.Normalize(vmin=25., vmax=75.)
     for i in range(len(out_features)):
         plot_data = np.array(out_features[i])
-        x1 = plot_data[:, 1].T
-        y1 = plot_data[:, 2].T
-        points = np.array([x1, y1]).T.reshape(-1, 1, 2)
-        segments = np.concatenate([points[:-1], points[1:]], axis=1)
-        slip_tendency = plot_data[:, 2]
+        n_seg = int(plot_data[:, 0].max()) + 1
+        segments = np.empty((n_seg, 2, 2))
+        for j in range(n_seg):
+            points = np.reshape(plot_data[j, 1:5], (2, 2))
+            segments[j] = points
+        # x1 = plot_data[:, 1].T
+        # y1 = plot_data[:, 2].T
+        # points = np.array([x1, y1]).T.reshape(-1, 1, 2)
+        # segments = np.concatenate([points[:-1], points[1:]], axis=1)
+        if flag == 'det':
+            slip_tendency = plot_data[:, 5]
+        elif flag == 'mc':
+            slip_tendency = plot_data[:, 5]
 
         lc = mpl.collections.LineCollection(segments, cmap=plt.get_cmap('jet_r'), norm=norm1)
-        lc.set_array(slip_tendency.T)
+        lc.set_array(slip_tendency)
         lc.set_linewidth(2)
         plt.gca().add_collection(lc)
-    #    plt.xlim(min(x), max(x))
-    #    plt.ylim(min(y), max(y))
+        plt.xlim(plot_bounds[0], plot_bounds[2])
+        plt.ylim(plot_bounds[1], plot_bounds[3])
     plt.show()
 
 
@@ -428,5 +452,5 @@ if __name__ == '__main__':
                      'sv': 130.0, 'svunc': 25.0,
                      'depth': 5.0, 'shmaxaz': 75.0, 'shminaz': 165.0, 'azunc': 15.0, 'pf': 50.0, 'pfunc': 15.0,
                      'mu': 0.7, 'mu_unc': 0.05}
-    results = slip_tendency_2d(inFile_test, inParams_test, mode='mc')
-    plot_all_det(results)
+    results, bounds = slip_tendency_2d(inFile_test, inParams_test, mode='mc')
+    plot_all(results, 'mc', bounds)
