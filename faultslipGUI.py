@@ -1,34 +1,31 @@
 #!/usr/bin/env python3
 
-from PyQt5 import QtGui, QtWidgets
+from PyQt5 import QtWidgets, uic
+from pyqtgraph import PlotWidget, plot
 import pyqtgraph as pg
+import sys
+import os
 
 
-# Always start by initializing Qt (only once per application)
-app = QtWidgets.QApplication([])
+class MainWindow(QtWidgets.QMainWindow):
 
-# Define a top-level widget to hold everything
-w = QtWidgets.QWidget()
+    def __init__(self, *args, **kwargs):
+        super(MainWindow, self).__init__(*args, **kwargs)
 
-# Create some widgets to be placed inside
-btn = QtWidgets.QPushButton('press me')
-text = QtWidgets.QLineEdit('enter text')
-listw = QtWidgets.QListWidget()
-plot = pg.PlotWidget()
+        # load the UI page
+        uic.loadUi('MainWindow.ui', self)
 
-# Create a grid layout to manage the widgets size and position
-layout = QtWidgets.QGridLayout()
+        self.plot([1,2,3,4,5,6,7,8,9,10], [30,32,34,32,33,31,29,32,35,45])
+
+    def plot(self, hour, temperature):
+        self.graphWidgetC.plot(hour, temperature)
+
+def main():
+    app = QtWidgets.QApplication(sys.argv)
+    main = MainWindow()
+    main.show()
+    sys.exit(app.exec_())
 
 
-# Add widgets to the layout in their proper positions
-layout.addWidget(btn, 0, 0)     # button goes in upper-left
-layout.addWidget(text, 1, 0)    # text edit goes in middle-left
-layout.addWidget(listw, 2, 0)   # list widget goes in bottom-left
-layout.addWidget(plot, 0, 1, 3, 1)  # plot goes on right side, spanning 3 rows
-
-# Display the widget as a new window
-w.setLayout(layout)
-w.show()
-
-# Start the Qt event loop
-app.exec_()
+if __name__ == '__main__':
+    main()

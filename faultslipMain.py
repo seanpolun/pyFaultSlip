@@ -13,6 +13,35 @@ nsims = 10000
 # TODO: Implement 3D slip tendency analysis
 
 
+class Plane(object):
+    """ """
+    default_unc = 0.05
+
+    def __init__(self, strike, dip, **kwargs):
+        self.strike = float(strike)
+        self.dip = float(dip)
+        if 'dip_unc' in kwargs.values():
+            self.dip_unc = float(kwargs['dip_unc'])
+        else:
+            self.dip_unc = self.dip * self.default_unc
+        if 'strike_unc' in kwargs.values():
+            self.strike_unc = float(kwargs['strike_unc'])
+        else:
+            self.strike_unc = self.strike * self.default_unc
+
+    def gen_unc_pole(self):
+        rand_strike = (np.random.randn(1500) * self.strike_unc) + self.strike
+        rand_dip = (np.random.randn(1500) * self.dip_unc) + self.dip
+        rand_dip_dir = rand_strike + (math.pi()/2.)
+        v1 = [np.sin(rand_strike) * np.cos(rand_dip_dir), np.cos(rand_strike) * np.cos(rand_dip_dir),
+              np.sin(rand_dip_dir)]
+        v2 = [np.sin(rand_dip_dir) * np.cos(rand_dip), np.cos(rand_dip_dir) * np.cos(rand_dip),  np.sin(rand_dip)]
+        fault_plane_pole_rand = np.cross(v1, v2)
+        pole = np.mean(fault_plane_pole_rand, axis=0)
+        pole_unc = np.std(fault_plane_pole_rand, axis=0)
+        return pole, pole_unc
+
+
 @numba.njit
 def rot_matrix_axis_angle(axis, angle):
     """
@@ -383,18 +412,12 @@ def slip_tendency_2d(infile, inparams, mode):
             #     point2 = work_feat_inter_coords[j + 1]
             point1 = work_feat_coords[j]
             point2 = work_feat_coords[j + 1]
-            azimuth = point_az(point1[0], point2[0], point1[1], point2[1])
-            dip_dir = azimuth + 90
-            az_rad = math.radians(azimuth)
-            az_dip_rad = 0
-            dip_dir_az = math.radians(dip_dir)
+            azimuth = math.radians(point_az(point1[0], point2[0], point1[1], point2[1]))
             dip_rad = math.radians(dip)
-            v1 = [math.sin(az_rad) * math.cos(az_dip_rad), math.cos(az_rad) * math.cos(az_dip_rad),
-                  math.sin(az_dip_rad)]
-            v2 = [math.sin(dip_dir_az) * math.cos(dip_rad), math.cos(dip_dir_az) * math.cos(dip_rad),
-                  math.sin(dip_rad)]
-            fault_plane_pole = np.cross(v1, v2)
+
             if mode == 'det':
+                fault_plane = Plane(azimuth, dip_rad)
+                fault_plane_pole, pole_unc = fault_plane.gen_unc_pole()
                 slip_tend, fail_pressure = deterministic_slip_tend(fault_plane_pole, stress_tensor, sigma1_ax,
                                                                    inparams['pf'], inparams['mu'])
                 outrow = [j, work_feat_coords[j][0], work_feat_coords[j][1], work_feat_coords[j + 1][0], work_feat_coords[j + 1][1], slip_tend, fail_pressure]
