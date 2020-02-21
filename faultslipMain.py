@@ -12,34 +12,38 @@ nsims = 10000
 
 # TODO: Implement 3D slip tendency analysis
 
-
+# plane_spec = [('strike', numba.float_), ('dip', numba.float_), ('strike_unc', numba.float_), ('dip_unc', numba.float_),
+#               ('pole', numba.float_[:]), ('pole_unc', numba.float_[:])]
+#
+#
+# @numba.jitclass(plane_spec)
 class Plane(object):
     """ """
-    default_unc = 0.05
 
     def __init__(self, strike, dip, **kwargs):
+        default_unc = 0.05
+        n_sim = 1500
         self.strike = float(strike)
         self.dip = float(dip)
         if 'dip_unc' in kwargs.values():
             self.dip_unc = float(kwargs['dip_unc'])
         else:
-            self.dip_unc = self.dip * self.default_unc
+            self.dip_unc = self.dip * default_unc
         if 'strike_unc' in kwargs.values():
             self.strike_unc = float(kwargs['strike_unc'])
         else:
-            self.strike_unc = self.strike * self.default_unc
+            self.strike_unc = self.strike * default_unc
 
-    def gen_unc_pole(self):
-        rand_strike = (np.random.randn(1500) * self.strike_unc) + self.strike
-        rand_dip = (np.random.randn(1500) * self.dip_unc) + self.dip
-        rand_dip_dir = rand_strike + (math.pi()/2.)
-        v1 = [np.sin(rand_strike) * np.cos(rand_dip_dir), np.cos(rand_strike) * np.cos(rand_dip_dir),
-              np.sin(rand_dip_dir)]
-        v2 = [np.sin(rand_dip_dir) * np.cos(rand_dip), np.cos(rand_dip_dir) * np.cos(rand_dip),  np.sin(rand_dip)]
-        fault_plane_pole_rand = np.cross(v1, v2)
-        pole = np.mean(fault_plane_pole_rand, axis=0)
-        pole_unc = np.std(fault_plane_pole_rand, axis=0)
-        return pole, pole_unc
+        rand_strike = (np.random.randn(n_sim) * self.strike_unc) + self.strike
+        rand_dip = (np.random.randn(n_sim) * self.dip_unc) + self.dip
+        rand_dip_dir = rand_strike + (math.pi / 2.)
+        v1 = np.asarray([np.sin(rand_strike) * np.cos(rand_dip_dir), np.cos(rand_strike) * np.cos(rand_dip_dir),
+                         np.sin(rand_dip_dir)])
+        v2 = np.asarray([np.sin(rand_dip_dir) * np.cos(rand_dip), np.cos(rand_dip_dir) * np.cos(rand_dip),
+                         np.sin(rand_dip)])
+        fault_plane_pole_rand = np.cross(v1.T, v2.T)
+        self.pole = np.mean(fault_plane_pole_rand, axis=0)
+        self.pole_unc = np.std(fault_plane_pole_rand, axis=0)
 
 
 @numba.njit
@@ -286,12 +290,12 @@ def ecdf(indata):
 
 
 @numba.njit(parallel=True)
-def monte_carlo_slip_tendency(pole, stress_tensor, axis, pf, mu, unc_bounds=0.05):
+def monte_carlo_slip_tendency(pole, stress_tensor, axis, pf, mu, fault_plane_unc, unc_bounds=0.05):
     """
 
     Parameters
     ----------
-    pole : numpy.ndarray
+    plane : Plane object
         Pole to fault plane (1x3)
     stress_tensor : numpy.ndarray
         3x3 array with principal stresses
@@ -314,7 +318,9 @@ def monte_carlo_slip_tendency(pole, stress_tensor, axis, pf, mu, unc_bounds=0.05
     # n_sims = 10000
     pf_range = 25.
     # initialize uncertainty bounds
-    pole_unc = np.abs(pole * unc_bounds)
+    # pole = plane.pole
+    pole_unc = fault_plane_unc
+    # pole_unc = np.abs(pole * unc_bounds)
     princ_stress_vec = np.array([stress_tensor[0, 0], stress_tensor[1, 1], stress_tensor[2, 2]])
     princ_stress_unc = np.abs(princ_stress_vec * unc_bounds)
     axis_unc = np.abs(axis * unc_bounds)
@@ -417,13 +423,17 @@ def slip_tendency_2d(infile, inparams, mode):
 
             if mode == 'det':
                 fault_plane = Plane(azimuth, dip_rad)
-                fault_plane_pole, pole_unc = fault_plane.gen_unc_pole()
+                fault_plane_pole = fault_plane.pole
                 slip_tend, fail_pressure = deterministic_slip_tend(fault_plane_pole, stress_tensor, sigma1_ax,
                                                                    inparams['pf'], inparams['mu'])
                 outrow = [j, work_feat_coords[j][0], work_feat_coords[j][1], work_feat_coords[j + 1][0], work_feat_coords[j + 1][1], slip_tend, fail_pressure]
             elif mode == 'mc':
+                dip_unc = inparams['dipunc']
+                fault_plane = Plane(azimuth, dip_rad, dip_unc=math.radians(dip_unc))
+                fault_plane_pole = fault_plane.pole
+                fault_plane_unc = fault_plane.pole_unc
                 st_out = monte_carlo_slip_tendency(fault_plane_pole, stress_tensor, sigma1_ax, inparams['pf'],
-                                                   inparams['mu'], 0.05)
+                                                   inparams['mu'], fault_plane_unc, 0.05)
                 pf_out = st_out[:, 0]
                 true_data = pf_out[st_out[:, 2] > st_out[:, 1]]
                 tend_out = ecdf(true_data)
