@@ -12,13 +12,28 @@ nsims = 10000
 
 # TODO: Implement 3D slip tendency analysis
 
-# plane_spec = [('strike', numba.float_), ('dip', numba.float_), ('strike_unc', numba.float_), ('dip_unc', numba.float_),
-#               ('pole', numba.float_[:]), ('pole_unc', numba.float_[:])]
-#
-#
-# @numba.jitclass(plane_spec)
+
 class Plane(object):
-    """ """
+    """
+    Plane class, relays orientation and uncertainty. Initialization requires strike and dip, strike_unc and dip_unc are
+    optional.
+
+    Attributes
+    ----------
+    strike : float
+        Strike azimuth
+    dip: float
+        dip angle
+    strike_unc : float
+        strike uncertainty
+    dip_unc : float
+        dip uncertainty
+    pole : np.ndarray
+        Pole to plane
+    pole_unc : np.ndarray
+        Uncertainties of pole components
+
+    """
 
     def __init__(self, strike, dip, **kwargs):
         default_unc = 0.05
@@ -42,7 +57,8 @@ class Plane(object):
         v2 = np.asarray([np.sin(rand_dip_dir) * np.cos(rand_dip), np.cos(rand_dip_dir) * np.cos(rand_dip),
                          np.sin(rand_dip)])
         fault_plane_pole_rand = np.cross(v1.T, v2.T)
-        self.pole = np.mean(fault_plane_pole_rand, axis=0)
+        pole1 = np.mean(fault_plane_pole_rand, axis=0)
+        self.pole = pole1 / np.linalg.norm(pole1)
         self.pole_unc = np.std(fault_plane_pole_rand, axis=0)
 
 
@@ -76,7 +92,8 @@ def rot_matrix_axis_angle(axis, angle):
 
 
 @numba.njit
-def define_principal_stresses(sv, shmin, shmax, hminaz, hmaxaz):
+def define_principal_stresses(sv1, depth, shmin1, shmax1, hminaz, hmaxaz, sv_unc=10, shmin_unc=10, shmax_unc=10,
+                              v_tilt_unc=10, h_az_unc=10, is_3d=False):
     """
     Generates cauchy stress tensor from principal stress directions, assumes vertical stress in one direction
     rotates sigma1 (maximum principal stress) direction to plane normal
@@ -84,57 +101,100 @@ def define_principal_stresses(sv, shmin, shmax, hminaz, hmaxaz):
     Parameters
     ----------
     sv : float
-        vertical stress
+        vertical stress at depth
+    depth : float
+        Depth of analysis (sv = sv_grad * depth)
     shmin : float
-        minimum horizontal stress
+        minimum horizontal stress at depth
     shmax : float
-        maximum horizontal stress
+        maximum horizontal stress at depth
     hminaz : float
         minimum horizontal stress direction
     hmaxaz : float
         maximum horizontal stress direction
+    sv_unc : float
+        Vertical stress uncertainty at depth
+    shmax_unc : float
+        maximum horizontal stress uncertainty
+    shmin_unc : float
+        Minimum horizontal stress uncertainty
+    v_tilt_unc : float
+        tilt uncertainty for vertical stress
+    h_az_unc : float
+        Horizontal stress orientation uncertainty
+    is_3d : bool
+        Is this model 3d? returns gradients if so
 
     Returns
     -------
     princ_stress_tensor :  numpy.ndarray
         3x3 stress tensor aligned to principal stress orientations
+    princ_stress_unc : numpy.ndarray
     axis : numpy.ndarray
         Sigma-1 stress unit axis (which is rotated to align with plane for normal / shear stress analysis)
+    axis_unc : numpy.ndarray
+        uncertainty for sigma-1 unit axis
+
     """
+    nsim = 5000
+    h_az_unc = math.radians(h_az_unc)
+    v_tilt_unc = math.radians(v_tilt_unc)
+    hmaxaz = math.radians(hmaxaz)
+    hminaz = math.radians(hminaz)
 
-    if abs(hmaxaz - hminaz) != 90:
-        raise ValueError('hmin and hmax are not orthogonal')
-    #    rotangle = math.radians(hmaxaz)
-    if sv > shmax > shmin:
-        sigma1 = sv
-        sigma2 = shmax
-        sigma3 = shmin
-        az_rad = 0.
-        az_dip_rad = math.pi / 2.
-        rotated_axis = np.asarray([math.sin(az_rad) * math.cos(az_dip_rad), math.cos(az_rad) * math.cos(az_dip_rad),
-                                   math.sin(az_dip_rad)])
-    elif shmax > sv > shmin:
-        sigma1 = shmax
-        sigma2 = sv
-        sigma3 = shmin
-        az_rad = math.radians(shmax)
-        az_dip_rad = 0.
-        rotated_axis = np.asarray([math.sin(az_rad) * math.cos(az_dip_rad), math.cos(az_rad) * math.cos(az_dip_rad),
-                                   math.sin(az_dip_rad)])
-    elif shmax > shmin > sv:
-        sigma1 = shmax
-        sigma2 = shmin
-        sigma3 = sv
-        az_rad = math.radians(shmax)
-        az_dip_rad = 0.
-        rotated_axis = np.asarray([math.sin(az_rad) * math.cos(az_dip_rad), math.cos(az_rad) * math.cos(az_dip_rad),
-                                   math.sin(az_dip_rad)])
-    else:
-        raise ValueError('Unable to differentiate principal stress directions')
-    princ_stress_tensor = np.array([[sigma1, 0., 0.], [0., sigma2, 0.], [0., 0., sigma3]])
+    if is_3d:
+        sv1 = sv1 / depth
+        shmax1 = shmax1 / depth
+        shmin1 = shmin1 / depth
+    axis_out = np.zeros((nsim, 3))
+    stress_out = np.zeros((nsim, 3))
+    for i in numba.prange(nsim):
+        sv = sv_unc * np.random.randn() + sv1
+        shmax = shmax_unc * np.random.randn() + shmax1
+        shmin = shmin_unc * np.random.randn() + shmin1
+
+        if abs(hmaxaz - hminaz) != 90:
+            raise ValueError('hmin and hmax are not orthogonal')
+
+        if sv > shmax > shmin:
+            sigma1 = sv
+            sigma2 = shmax
+            sigma3 = shmin
+            az_rad = h_az_unc * np.random.randn() + hmaxaz
+            az_dip_rad = v_tilt_unc * np.random.randn() + math.pi / 2.
+            rotated_axis = np.asarray([math.sin(az_rad) * math.cos(az_dip_rad), math.cos(az_rad) * math.cos(az_dip_rad),
+                                       math.sin(az_dip_rad)])
+
+        else:
+            sigma1 = shmax
+            az_rad = h_az_unc * np.random.randn() + hmaxaz
+            az_dip_rad = v_tilt_unc * np.random.randn() + 0.  # average dip is 0
+            if shmax > sv > shmin:
+                sigma2 = sv
+                sigma3 = shmin
+                rotated_axis = np.asarray([math.sin(az_rad) * math.cos(az_dip_rad), math.cos(az_rad) * math.cos(az_dip_rad),
+                                           math.sin(az_dip_rad)])
+            elif shmax > shmin > sv:
+                sigma2 = shmin
+                sigma3 = sv
+                rotated_axis = np.asarray([math.sin(az_rad) * math.cos(az_dip_rad), math.cos(az_rad) * math.cos(az_dip_rad),
+                                           math.sin(az_dip_rad)])
+            else:
+                raise ValueError('Unable to resolve principal stress orientations')
+        axis_out[i, :] = rotated_axis
+        stress_out[i, :] = np.asarray([sigma1, sigma2, sigma3])
+    sigma1_mean = np.mean(stress_out[:, 0])
+    sigma2_mean = np.mean(stress_out[:, 1])
+    sigma3_mean = np.mean(stress_out[:, 2])
+    sigma1_std = np.std(stress_out[:, 0])
+    sigma2_std = np.std(stress_out[:, 1])
+    sigma3_std = np.std(stress_out[:, 2])
+    rotated_axis = np.mean(axis_out, axis=0)
+    axis_std = np.std(axis_out, axis=0)
+    princ_stress_tensor = np.array([[sigma1_mean, 0., 0.], [0., sigma2_mean, 0.], [0., 0., sigma3_mean]])
+    princ_stress_tensor_unc = np.array([[sigma1_std, 0., 0.], [0., sigma2_std, 0.], [0., 0., sigma3_std]])
     # rotated_axis = np.array(rotated_axis)
-    return princ_stress_tensor, rotated_axis
-
+    return princ_stress_tensor, rotated_axis, princ_stress_tensor_unc, axis_std
 
 @numba.njit
 def rotate_plane_stress(sigma_1_ax, plane_norm, princ_stress_tensor):
@@ -290,7 +350,8 @@ def ecdf(indata):
 
 
 @numba.njit(parallel=True)
-def monte_carlo_slip_tendency(pole, stress_tensor, axis, pf, mu, fault_plane_unc, unc_bounds=0.05):
+def monte_carlo_slip_tendency(pole, stress_tensor, stress_unc, axis, axis_unc, pf, mu, fault_plane_unc,
+                              mu_unc):
     """
 
     Parameters
@@ -322,10 +383,11 @@ def monte_carlo_slip_tendency(pole, stress_tensor, axis, pf, mu, fault_plane_unc
     pole_unc = fault_plane_unc
     # pole_unc = np.abs(pole * unc_bounds)
     princ_stress_vec = np.array([stress_tensor[0, 0], stress_tensor[1, 1], stress_tensor[2, 2]])
-    princ_stress_unc = np.abs(princ_stress_vec * unc_bounds)
-    axis_unc = np.abs(axis * unc_bounds)
+    princ_stress_unc = np.array([stress_unc[0, 0], stress_unc[1, 1], stress_unc[2, 2]])
+    # princ_stress_unc = np.abs(princ_stress_vec * unc_bounds)
+    #axis_unc = np.abs(axis * unc_bounds)
     # pf_guess_unc = pf * unc_bounds
-    mu_unc = np.abs(mu * unc_bounds)
+    # mu_unc = np.abs(mu * unc_bounds)
 
     # main simulation loop
     out_data = np.empty((nsims, 3))
@@ -390,9 +452,22 @@ def slip_tendency_2d(infile, inparams, mode):
     shmaxaz = inparams['shmaxaz']
     shminaz = inparams['shminaz']
     dip = inparams['dip']
-    stress_tensor, sigma1_ax = define_principal_stresses(sv, shmin, shmax, shminaz, shmaxaz)
+    sv_unc1 = inparams['svunc']
+    az_unc = inparams['az_unc']
+    shmin_unc = inparams['shmiunc']
+    shmax_unc = inparams['shMunc']
+    if mode == 'mc':
+        stress_tensor, sigma1_ax, stress_unc, sig_1_std = define_principal_stresses(sv, shmin, shmax, shminaz,  shmaxaz,
+                                                                                    sv_unc=sv_unc1, shmin_unc=shmin_unc,
+                                                                                    shmax_unc=shmax_unc, v_tilt_unc=10,
+                                                                                    h_az_unc=az_unc, is_3d=False)
+    elif mode == 'det':
+        stress_tensor, sigma1_ax, stress_unc, sig_1_std = define_principal_stresses(sv, shmin, shmax, shminaz,
+                                                                                    shmaxaz)
+    else:
+        raise ValueError('No recognized processing mode [''mc'' or ''det'']')
     lineaments = gp.GeoSeries.from_file(infile)
-    bounds = lineaments.total_bounds
+    bounds1 = lineaments.total_bounds
     #    lin_crs = lineaments.crs
     num_features = len(lineaments)
     out_features = []
@@ -446,7 +521,7 @@ def slip_tendency_2d(infile, inparams, mode):
             fault_out_arr.append(outrow)
         out_features.append(fault_out_arr)
         print(["Finished object# ", str(i + 1)])
-    return out_features, bounds
+    return out_features, bounds1
 
 
 def plot_all(out_features, flag, plot_bounds):
