@@ -139,8 +139,9 @@ def define_principal_stresses(sv1, depth, shmin1, shmax1, hminaz, hmaxaz, sv_unc
     nsim = 5000
     h_az_unc = math.radians(h_az_unc)
     v_tilt_unc = math.radians(v_tilt_unc)
+    if round(abs(hmaxaz - hminaz), 0) != 90.:
+        raise ValueError('hmin and hmax are not orthogonal')
     hmaxaz = math.radians(hmaxaz)
-    hminaz = math.radians(hminaz)
 
     if is_3d:
         sv1 = sv1 / depth
@@ -152,9 +153,6 @@ def define_principal_stresses(sv1, depth, shmin1, shmax1, hminaz, hmaxaz, sv_unc
         sv = sv_unc * np.random.randn() + sv1
         shmax = shmax_unc * np.random.randn() + shmax1
         shmin = shmin_unc * np.random.randn() + shmin1
-
-        if abs(hmaxaz - hminaz) != 90:
-            raise ValueError('hmin and hmax are not orthogonal')
 
         if sv > shmax > shmin:
             sigma1 = sv
@@ -189,8 +187,9 @@ def define_principal_stresses(sv1, depth, shmin1, shmax1, hminaz, hmaxaz, sv_unc
     sigma1_std = np.std(stress_out[:, 0])
     sigma2_std = np.std(stress_out[:, 1])
     sigma3_std = np.std(stress_out[:, 2])
-    rotated_axis = np.mean(axis_out, axis=0)
-    axis_std = np.std(axis_out, axis=0)
+    rotated_axis = np.array([np.mean(axis_out[:, 0]), np.mean(axis_out[:, 1]), np.mean(axis_out[:, 2])])
+    rotated_axis = rotated_axis / np.linalg.norm(rotated_axis)
+    axis_std = np.array([np.std(axis_out[:, 0]), np.std(axis_out[:, 1]), np.std(axis_out[:, 2])])
     princ_stress_tensor = np.array([[sigma1_mean, 0., 0.], [0., sigma2_mean, 0.], [0., 0., sigma3_mean]])
     princ_stress_tensor_unc = np.array([[sigma1_std, 0., 0.], [0., sigma2_std, 0.], [0., 0., sigma3_std]])
     # rotated_axis = np.array(rotated_axis)
@@ -350,28 +349,35 @@ def ecdf(indata):
 
 
 @numba.njit(parallel=True)
-def monte_carlo_slip_tendency(pole, stress_tensor, stress_unc, axis, axis_unc, pf, mu, fault_plane_unc,
+def monte_carlo_slip_tendency(pole, pole_unc, stress_tensor, stress_unc, axis, axis_unc, pf, mu,
                               mu_unc):
     """
 
     Parameters
     ----------
-    plane : Plane object
+    pole : numpy.ndarray
         Pole to fault plane (1x3)
+    pole_unc : numpy.ndarray
+        Pole uncertainty (1x3)
     stress_tensor : numpy.ndarray
         3x3 array with principal stresses
+    stress_unc : numpy.ndarray
+        3x3 array with stress uncertainty
     axis : numpy.ndarray
         1x3 vector with sigma-1 orientation
+    axis_unc : numpy.ndarray
+        uncertainty for sigma-1 orientation
     pf : float
         Best Guess pore fluid pressure at depth
     mu : float
         Coeffecient of static friction for fault
-    unc_bounds : float
-        Uncertainty for bounds, presently 5% as default
+    mu_unc : float
+        Uncertainty for mu
 
     Returns
     -------
-
+    out_data : numpy.ndarray
+        nx3 array [fluid pressure, mu, slip tendency]
     """
     # TODO: Rewrite monte_carlo_slip_tendency() to take advantage of numba's CUDA support, may speed up simulation more,
     #  currently takes ~2s per full lineament simulation, may get bogged down on detailed 3d faults
@@ -379,15 +385,8 @@ def monte_carlo_slip_tendency(pole, stress_tensor, stress_unc, axis, axis_unc, p
     # n_sims = 10000
     pf_range = 25.
     # initialize uncertainty bounds
-    # pole = plane.pole
-    pole_unc = fault_plane_unc
-    # pole_unc = np.abs(pole * unc_bounds)
     princ_stress_vec = np.array([stress_tensor[0, 0], stress_tensor[1, 1], stress_tensor[2, 2]])
     princ_stress_unc = np.array([stress_unc[0, 0], stress_unc[1, 1], stress_unc[2, 2]])
-    # princ_stress_unc = np.abs(princ_stress_vec * unc_bounds)
-    #axis_unc = np.abs(axis * unc_bounds)
-    # pf_guess_unc = pf * unc_bounds
-    # mu_unc = np.abs(mu * unc_bounds)
 
     # main simulation loop
     out_data = np.empty((nsims, 3))
@@ -395,7 +394,6 @@ def monte_carlo_slip_tendency(pole, stress_tensor, stress_unc, axis, axis_unc, p
         pole_rand = np.random.randn(3)
         pole1 = (pole_unc * pole_rand) + pole
         pole1 = pole1 / np.linalg.norm(pole1)
-        # pole1 = pole_rand[i].flatten()
 
         stress_rand = np.random.randn(3)
         stress_rand = (princ_stress_unc * stress_rand) + princ_stress_vec
@@ -405,12 +403,8 @@ def monte_carlo_slip_tendency(pole, stress_tensor, stress_unc, axis, axis_unc, p
         axis_rand = np.random.randn(3)
         axis1 = (axis_unc * axis_rand) + axis
         axis1 = axis1 / np.linalg.norm(axis1)
-        # axis1 = axis_rand[i].flatten()
-
         pf1 = np.random.random() * (pf + pf_range)
-        # pf1 = pf1[0]
         mu1 = (np.random.randn() * mu_unc) + mu
-        # mu1 = mu1[0]
 
         plane_stress = rotate_plane_stress(axis1, pole1, stress1)
         sigma_n = plane_stress[0, 0]
@@ -424,7 +418,7 @@ def monte_carlo_slip_tendency(pole, stress_tensor, stress_unc, axis, axis_unc, p
     return out_data
 
 
-#@numba.jit(forceobj=True, parallel=True)
+# @numba.jit(forceobj=True, parallel=True)
 def slip_tendency_2d(infile, inparams, mode):
     """
     Compute a deterministic 2d (i.e. where the 2d geometry is only known) slip tendency analysis. Outputs a map, as well
@@ -453,17 +447,21 @@ def slip_tendency_2d(infile, inparams, mode):
     shminaz = inparams['shminaz']
     dip = inparams['dip']
     sv_unc1 = inparams['svunc']
-    az_unc = inparams['az_unc']
+    az_unc = inparams['azunc']
     shmin_unc = inparams['shmiunc']
     shmax_unc = inparams['shMunc']
+    depth = inparams['depth']
     if mode == 'mc':
-        stress_tensor, sigma1_ax, stress_unc, sig_1_std = define_principal_stresses(sv, shmin, shmax, shminaz,  shmaxaz,
+        stress_tensor, sigma1_ax, stress_unc, sig_1_std = define_principal_stresses(sv, depth, shmin, shmax, shminaz, shmaxaz,
                                                                                     sv_unc=sv_unc1, shmin_unc=shmin_unc,
                                                                                     shmax_unc=shmax_unc, v_tilt_unc=10,
                                                                                     h_az_unc=az_unc, is_3d=False)
+
+
     elif mode == 'det':
-        stress_tensor, sigma1_ax, stress_unc, sig_1_std = define_principal_stresses(sv, shmin, shmax, shminaz,
+        stress_tensor, sigma1_ax, stress_unc, sig_1_std = define_principal_stresses(sv, depth, shmin, shmax, shminaz,
                                                                                     shmaxaz)
+
     else:
         raise ValueError('No recognized processing mode [''mc'' or ''det'']')
     lineaments = gp.GeoSeries.from_file(infile)
@@ -497,18 +495,21 @@ def slip_tendency_2d(infile, inparams, mode):
             dip_rad = math.radians(dip)
 
             if mode == 'det':
+
                 fault_plane = Plane(azimuth, dip_rad)
                 fault_plane_pole = fault_plane.pole
                 slip_tend, fail_pressure = deterministic_slip_tend(fault_plane_pole, stress_tensor, sigma1_ax,
                                                                    inparams['pf'], inparams['mu'])
-                outrow = [j, work_feat_coords[j][0], work_feat_coords[j][1], work_feat_coords[j + 1][0], work_feat_coords[j + 1][1], slip_tend, fail_pressure]
+                outrow = [j, work_feat_coords[j][0], work_feat_coords[j][1], work_feat_coords[j + 1][0],
+                          work_feat_coords[j + 1][1], slip_tend, fail_pressure]
             elif mode == 'mc':
                 dip_unc = inparams['dipunc']
                 fault_plane = Plane(azimuth, dip_rad, dip_unc=math.radians(dip_unc))
                 fault_plane_pole = fault_plane.pole
                 fault_plane_unc = fault_plane.pole_unc
-                st_out = monte_carlo_slip_tendency(fault_plane_pole, stress_tensor, sigma1_ax, inparams['pf'],
-                                                   inparams['mu'], fault_plane_unc, 0.05)
+                st_out = monte_carlo_slip_tendency(fault_plane_pole, fault_plane_unc, stress_tensor, stress_unc,
+                                                   sigma1_ax, sig_1_std, inparams['pf'], inparams['mu'],
+                                                   inparams['mu_unc'])
                 pf_out = st_out[:, 0]
                 true_data = pf_out[st_out[:, 2] > st_out[:, 1]]
                 tend_out = ecdf(true_data)
@@ -521,14 +522,24 @@ def slip_tendency_2d(infile, inparams, mode):
             fault_out_arr.append(outrow)
         out_features.append(fault_out_arr)
         print(["Finished object# ", str(i + 1)])
-    return out_features, bounds1
+    flat_out_features = np.array(flat_out_features)
+    plotmin = np.min(flat_out_features[:, 5])
+    plotmax = np.max(flat_out_features[:, 5])
+    return out_features, bounds1, plotmin, plotmax
 
 
-def plot_all(out_features, flag, plot_bounds):
+def plot_all(out_features, flag, plot_bounds, plotmin, plotmax):
     if flag == 'det':
-        norm1 = mpl.colors.Normalize(vmin=0.5, vmax=1.)
+        plotmin1 = plotmin - 0.01
+        plotmax1 = plotmax + 0.01
+        norm1 = mpl.colors.Normalize(vmin=plotmin1, vmax=plotmax1)
     elif flag == 'mc':
-        norm1 = mpl.colors.Normalize(vmin=25., vmax=75.)
+        plotmin1 = plotmin - 2.5
+        plotmax1 = plotmax + 2.5
+        norm1 = mpl.colors.Normalize(vmin=plotmin1, vmax=plotmax1)
+    fig, ax = plt.subplots()
+    ax.set_xlim(plot_bounds[0], plot_bounds[2])
+    ax.set_ylim(plot_bounds[1], plot_bounds[3])
     for i in range(len(out_features)):
         plot_data = np.array(out_features[i])
         n_seg = int(plot_data[:, 0].max()) + 1
@@ -548,9 +559,12 @@ def plot_all(out_features, flag, plot_bounds):
         lc = mpl.collections.LineCollection(segments, cmap=plt.get_cmap('jet_r'), norm=norm1)
         lc.set_array(slip_tendency)
         lc.set_linewidth(2)
-        plt.gca().add_collection(lc)
-        plt.xlim(plot_bounds[0], plot_bounds[2])
-        plt.ylim(plot_bounds[1], plot_bounds[3])
+        ax.add_collection(lc)
+    axcb = fig.colorbar(lc)
+    if flag == 'det':
+        axcb.set_label('Slip Tendency')
+    elif flag == 'mc':
+        axcb.set_label('Failure Pressure [MPa]')
     plt.show()
 
 
@@ -560,5 +574,5 @@ if __name__ == '__main__':
                      'sv': 130.0, 'svunc': 25.0,
                      'depth': 5.0, 'shmaxaz': 75.0, 'shminaz': 165.0, 'azunc': 15.0, 'pf': 50.0, 'pfunc': 15.0,
                      'mu': 0.7, 'mu_unc': 0.05}
-    results, bounds = slip_tendency_2d(inFile_test, inParams_test, mode='mc')
-    plot_all(results, 'mc', bounds)
+    results, bounds, plot_min, plot_max = slip_tendency_2d(inFile_test, inParams_test, mode='mc')
+    plot_all(results, 'mc', bounds, plot_min, plot_max)
