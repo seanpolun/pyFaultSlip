@@ -7,8 +7,9 @@ import matplotlib.pyplot as plt
 import geopandas as gp
 import numba
 from shapely.geometry import LineString
+import json
 
-nsims = 10000
+nsims = 100000
 
 # TODO: Implement 3D slip tendency analysis
 
@@ -37,7 +38,7 @@ class Plane(object):
 
     def __init__(self, strike, dip, **kwargs):
         default_unc = 0.05
-        n_sim = 1500
+        n_sim = 25000
         self.strike = float(strike)
         self.dip = float(dip)
         if 'dip_unc' in kwargs.values():
@@ -136,7 +137,7 @@ def define_principal_stresses(sv1, depth, shmin1, shmax1, hminaz, hmaxaz, sv_unc
         uncertainty for sigma-1 unit axis
 
     """
-    nsim = 5000
+    nsim = nsims
     h_az_unc = math.radians(h_az_unc)
     v_tilt_unc = math.radians(v_tilt_unc)
     if round(abs(hmaxaz - hminaz), 0) != 90.:
@@ -332,6 +333,21 @@ def deterministic_slip_tend(pole, stress_tensor, axis, pf, mu):
 
 @numba.njit(numba.float64[:, :](numba.float64[:]))
 def ecdf(indata):
+    """
+    Generate an empirical cumulative density function (ECDF) for a set of data that has been filtered by a failure
+    criterion.
+
+    Parameters
+    ----------
+    indata : numpy.ndarray
+        1xn array of values that meet failure criteria
+
+    Returns
+    -------
+    out : numpy.ndarray
+        2xn array of values and probabilities (val, prob)
+
+    """
     # x = np.sort(data)
     if indata.size == 0:
         x = np.array([0., 0., 0.])
@@ -421,7 +437,7 @@ def monte_carlo_slip_tendency(pole, pole_unc, stress_tensor, stress_unc, axis, a
 # @numba.jit(forceobj=True, parallel=True)
 def slip_tendency_2d(infile, inparams, mode):
     """
-    Compute a deterministic 2d (i.e. where the 2d geometry is only known) slip tendency analysis. Outputs a map, as well
+    Compute a  2d (i.e. where the 2d geometry is only known) slip tendency analysis. Outputs a map, as well
     as a table with the following schema:
     (ID : int) (x : float) (y : float) (Slip tendency : float) (Effective slip tendency : float)
 
@@ -456,7 +472,6 @@ def slip_tendency_2d(infile, inparams, mode):
                                                                                     sv_unc=sv_unc1, shmin_unc=shmin_unc,
                                                                                     shmax_unc=shmax_unc, v_tilt_unc=10,
                                                                                     h_az_unc=az_unc, is_3d=False)
-
 
     elif mode == 'det':
         stress_tensor, sigma1_ax, stress_unc, sig_1_std = define_principal_stresses(sv, depth, shmin, shmax, shminaz,
@@ -528,18 +543,36 @@ def slip_tendency_2d(infile, inparams, mode):
     return out_features, bounds1, plotmin, plotmax
 
 
-def plot_all(out_features, flag, plot_bounds, plotmin, plotmax):
+def plot_all(out_features, flag, plot_bounds, plotmin, plotmax, rot_angle):
+    xmin = plot_bounds[0]
+    xmax = plot_bounds[2]
+    ymin = plot_bounds[1]
+    ymax = plot_bounds[3]
+    # increase bounds by set percentage
+    increase_scale = 0.25
+    xrange = xmax - xmin
+    yrange = ymax - ymin
+    xinc = (xrange * increase_scale) / 2
+    yinc = (yrange * increase_scale) / 2
+    xmin1 = xmin - xinc
+    xmax1 = xmax + xinc
+    ymin1 = ymin - yinc
+    ymax1 = ymax + yinc
+
     if flag == 'det':
         plotmin1 = plotmin - 0.01
         plotmax1 = plotmax + 0.01
         norm1 = mpl.colors.Normalize(vmin=plotmin1, vmax=plotmax1)
     elif flag == 'mc':
-        plotmin1 = plotmin - 2.5
-        plotmax1 = plotmax + 2.5
+        # plotmin1 = plotmin - 5
+        # plotmax1 = plotmax + 5
+        plotmin1 = 35
+        plotmax1 = 48
         norm1 = mpl.colors.Normalize(vmin=plotmin1, vmax=plotmax1)
-    fig, ax = plt.subplots()
-    ax.set_xlim(plot_bounds[0], plot_bounds[2])
-    ax.set_ylim(plot_bounds[1], plot_bounds[3])
+    fig, ax = plt.subplots(dpi=300)
+    # fig.set_size_inches(6, 4)
+    ax.set_xlim(xmin1, xmax1)
+    ax.set_ylim(ymin1, ymax1)
     for i in range(len(out_features)):
         plot_data = np.array(out_features[i])
         n_seg = int(plot_data[:, 0].max()) + 1
@@ -565,14 +598,33 @@ def plot_all(out_features, flag, plot_bounds, plotmin, plotmax):
         axcb.set_label('Slip Tendency')
     elif flag == 'mc':
         axcb.set_label('Failure Pressure [MPa]')
+    ax2 = fig.add_axes([0.15, 0.1, 0.2, 0.2])
+    str_img = plt.imread('./resources/h_stresses.png')
+    stress_im = ax2.imshow(str_img)
+    midx = str_img.shape[0] / 2
+    midy = str_img.shape[1] / 2
+    transf = mpl.transforms.Affine2D().rotate_deg_around(midx, midy, rot_angle) + ax2.transData
+    stress_im.set_transform(transf)
+    ax2.set_xticks([])
+    ax2.set_yticks([])
+    ax2.set(frame_on=False)
     plt.show()
+
+
+def main(infile, params, type_flag):
+    results, bounds, plot_min, plot_max = slip_tendency_2d(infile, params, type_flag)
+    plot_all(results, type_flag, bounds, plot_min, plot_max, params['shmaxaz'])
 
 
 if __name__ == '__main__':
     inFile_test = "./testdata/fake_lineaments.shp"
-    inParams_test = {'dip': 90., 'dipunc': 10., 'shmax': 295.0, 'shMunc': 25.0, 'shmin': 77.0, 'shmiunc': 25.0,
-                     'sv': 130.0, 'svunc': 25.0,
-                     'depth': 5.0, 'shmaxaz': 75.0, 'shminaz': 165.0, 'azunc': 15.0, 'pf': 50.0, 'pfunc': 15.0,
-                     'mu': 0.7, 'mu_unc': 0.05}
-    results, bounds, plot_min, plot_max = slip_tendency_2d(inFile_test, inParams_test, mode='mc')
-    plot_all(results, 'mc', bounds, plot_min, plot_max)
+    # inParams_test = {'dip': 90., 'dipunc': 10., 'shmax': 295.0, 'shMunc': 25.0, 'shmin': 77.0, 'shmiunc': 25.0,
+    #                  'sv': 130.0, 'svunc': 25.0,
+    #                  'depth': 5.0, 'shmaxaz': 75.0, 'shminaz': 165.0, 'azunc': 15.0, 'pf': 50.0, 'pfunc': 15.0,
+    #                  'mu': 0.7, 'mu_unc': 0.05}
+    flag1 = 'mc'
+    in_file = './test.json'
+    with open(in_file) as json_file:
+        j_data = json.load(json_file)
+    inParams_test = j_data['input_data'][0]
+    main(inFile_test, inParams_test, flag1)
