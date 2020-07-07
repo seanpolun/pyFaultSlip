@@ -19,7 +19,8 @@
       "mu_unc" : 0.05,
       "flag" : "mc",
       "fail_percent" : 50,
-      "inc_unc" : 10
+      "inc_unc" : 10,
+      "datum" : 1160
     }
   ]
 }

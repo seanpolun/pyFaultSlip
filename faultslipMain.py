@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import math
 import numpy as np
 import matplotlib as mpl
@@ -8,10 +9,12 @@ import geopandas as gp
 import numba
 from shapely.geometry import LineString
 import json
+import trimesh
+import pymesh
+import warnings
+import datetime
 
-nsims = 100000
-
-# TODO: Implement 3D slip tendency analysis
+nsims = 10000
 
 
 class Plane(object):
@@ -61,6 +64,39 @@ class Plane(object):
         pole1 = np.mean(fault_plane_pole_rand, axis=0)
         self.pole = pole1 / np.linalg.norm(pole1)
         self.pole_unc = np.std(fault_plane_pole_rand, axis=0)
+
+
+def tsurf_read(infile):
+    """
+    Will convert a GoCAD TSurf file (.ts extension) into a ply format. Note: Contains no sanity checks for input file
+    besides file extension.
+    Parameters
+    ----------
+    infile : str
+        Path to input file
+
+    Returns
+    -------
+    outfile: str
+        Full path to output ply file
+    """
+    basename, ext = os.path.splitext(infile)
+    if ext != '.ts':
+        raise ImportError('File is not GoCAD Tsurf')
+    in_file_open = open(infile, "r+")
+    outfile = os.path.join(basename, '.ply')
+    raw_text = in_file_open.readlines()
+    vertices = []
+    faces = []
+    for line in raw_text:
+        line_split = line.split()
+        if line_split[0] == 'VRTX':
+            vertices.append(line_split[2:5])
+        elif line_split[0] == 'TRGL':
+            faces.append(line_split[1:4])
+    out_mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
+    trimesh.exchange.export.export_mesh(out_mesh, outfile, filetype='ply')
+    return outfile
 
 
 @numba.njit
@@ -543,6 +579,135 @@ def slip_tendency_2d(infile, inparams, mode):
     return out_features, bounds1, plotmin, plotmax
 
 
+def slip_tendency_3d(in_meshes, inparams, mode):
+    """
+
+    Parameters
+    ----------
+    in_meshes : str list
+    inparams
+    mode
+
+    Returns
+    -------
+
+    """
+
+    shmax = inparams['shmax']
+    shmin = inparams['shmin']
+    sv = inparams['sv']
+    shmaxaz = inparams['shmaxaz']
+    shminaz = inparams['shminaz']
+    sv_unc1 = inparams['svunc']
+    az_unc = inparams['azunc']
+    shmin_unc = inparams['shmiunc']
+    shmax_unc = inparams['shMunc']
+    datum = inparams['datum']
+    ref_depth = inparams['depth']
+
+    # initialize attribute names for analysis
+    attr_50 = "PoreFluid_50"
+    attr_75 = "PoreFluid_75"
+    attr_99 = "PoreFluid_99"
+
+
+    if mode == 'mc':
+        stress_tensor, sigma1_ax, stress_unc, sig_1_std = define_principal_stresses(sv, ref_depth, shmin, shmax,
+                                                                                    shminaz, shmaxaz,
+                                                                                    sv_unc=sv_unc1,
+                                                                                    shmin_unc=shmin_unc,
+                                                                                    shmax_unc=shmax_unc,
+                                                                                    v_tilt_unc=10,
+                                                                                    h_az_unc=az_unc,
+                                                                                    is_3d=False)
+
+    elif mode == 'det':
+        stress_tensor, sigma1_ax, stress_unc, sig_1_std = define_principal_stresses(sv, ref_depth, shmin, shmax,
+                                                                                    shminaz,
+                                                                                    shmaxaz)
+    else:
+        raise ValueError('No recognized processing mode [''mc'' or ''det'']')
+
+    # convert stress tensors into gradients / km
+    stress_grad_tensor = stress_tensor / ref_depth
+    stress_grad_unc = stress_unc / ref_depth
+
+    for mesh_num in range(len(in_meshes)):
+        mesh_path = in_meshes[mesh_num]
+        base_path, ext = os.path.splitext(mesh_path)
+        # handle gocad tsurf files (UGH)
+        if ext == '.ts':
+            outmesh = tsurf_read(mesh_path)
+            mesh = pymesh.load_mesh(outmesh)
+        elif ext == '.ply':
+            mesh = pymesh.load_mesh(mesh_path)
+        else:
+            warnings.warn('Not expected mesh format, use .ply or .ts')
+            try:
+                mesh = pymesh.load_mesh(mesh_path)
+            except RuntimeError:
+                warnings.warn(['Unable to load mesh: ' + mesh_path + '. Skipping.'])
+                continue
+            except OSError:
+                warnings.warn('Unable to find mesh: ' + mesh_path + '. Skipping.')
+                continue
+
+        num_faces = mesh.num_faces
+        # Extract mesh normals
+        mesh.add_attribute("face_normal")
+        normals = np.reshape(mesh.get_attribute("face_normal"), (num_faces, 3))
+        # Extract face centroids
+        mesh.add_attribute("face_centroid")
+        centroids = np.reshape(mesh.get_attribute("face_centroid"), (num_faces, 3))
+
+        # initialize output attributes
+        pf_50_prob = np.empty(num_faces, dtype=float)
+        pf_75_prob = np.empty(num_faces, dtype=float)
+        pf_99_prob = np.empty(num_faces, dtype=float)
+
+        for face_num in range(num_faces):
+            fault_plane_pole = normals[face_num]
+            tri_center = centroids[face_num]
+            # convert Z AMSL to Z depth (deeper is positive)
+            depth = ((tri_center[2] * -1) + datum) / 1000
+
+            stress_tensor = stress_grad_tensor * depth
+            stress_unc = stress_grad_unc * depth
+            if mode == 'det':
+                slip_tend, fail_pressure = deterministic_slip_tend(fault_plane_pole, stress_tensor, sigma1_ax,
+                                                                   inparams['pf'], inparams['mu'])
+                outrow = [mesh_num, face_num, slip_tend, fail_pressure]
+            elif mode == 'mc':
+                pole_unc = 0.05
+                fault_plane_unc = fault_plane_pole * pole_unc
+                st_out = monte_carlo_slip_tendency(fault_plane_pole, fault_plane_unc, stress_tensor, stress_unc,
+                                                   sigma1_ax, sig_1_std, inparams['pf'], inparams['mu'],
+                                                   inparams['mu_unc'])
+                pf_out = st_out[:, 0]
+                true_data = pf_out[st_out[:, 2] > st_out[:, 1]]
+                tend_out = ecdf(true_data)
+                ind_50 = (np.abs(tend_out[:, 1] - 0.5)).argmin()
+                ind_75 = (np.abs(tend_out[:, 1] - 0.75)).argmin()
+                ind_99 = (np.abs(tend_out[:, 1] - 0.99)).argmin()
+
+                pf_50_prob[face_num] = tend_out[ind_50, 0]
+                pf_75_prob[face_num] = tend_out[ind_75, 0]
+                pf_99_prob[face_num] = tend_out[ind_99, 0]
+
+            else:
+                raise ValueError('Cannot resolve calculation mode / not implemented yet')
+        mesh.add_attribute(attr_50)
+        mesh.add_attribute(attr_75)
+        mesh.add_attribute(attr_99)
+
+        mesh.set_attribute(attr_50, pf_50_prob)
+        mesh.set_attribute(attr_75, pf_75_prob)
+        mesh.set_attribute(attr_99, pf_99_prob)
+
+        out_mesh_file = base_path + 'proc_' + datetime.datetime.now().strftime('%Y_%j_%H%M%S') + '.ply'
+        pymesh.save_mesh(out_mesh_file, mesh, [attr_50, attr_75, attr_99])
+
+
 def plot_all(out_features, flag, plot_bounds, plotmin, plotmax, rot_angle):
     xmin = plot_bounds[0]
     xmax = plot_bounds[2]
@@ -611,8 +776,13 @@ def plot_all(out_features, flag, plot_bounds, plotmin, plotmax, rot_angle):
     plt.show()
 
 
-def main(infile, params, type_flag):
-    results, bounds, plot_min, plot_max = slip_tendency_2d(infile, params, type_flag)
+def main(infile, params, type_flag, dim='2d'):
+    if dim == '2d':
+        results, bounds, plot_min, plot_max = slip_tendency_2d(infile, params, type_flag)
+    elif dim == '3d':
+        results, bounds, plot_min, plotmax = slip_tendency_3d(infile, params, type_flag)
+    else:
+        raise(TypeError, "no defined type")
     plot_all(results, type_flag, bounds, plot_min, plot_max, params['shmaxaz'])
 
 
@@ -621,7 +791,7 @@ if __name__ == '__main__':
     # inParams_test = {'dip': 90., 'dipunc': 10., 'shmax': 295.0, 'shMunc': 25.0, 'shmin': 77.0, 'shmiunc': 25.0,
     #                  'sv': 130.0, 'svunc': 25.0,
     #                  'depth': 5.0, 'shmaxaz': 75.0, 'shminaz': 165.0, 'azunc': 15.0, 'pf': 50.0, 'pfunc': 15.0,
-    #                  'mu': 0.7, 'mu_unc': 0.05}
+    #                  'mu': 0.7, 'mu_unc': 0.05, 'datum': 1160}
     flag1 = 'mc'
     in_file = './test.json'
     with open(in_file) as json_file:

@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1356</width>
-    <height>969</height>
+    <width>1435</width>
+    <height>1169</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -19,8 +19,8 @@
      <rect>
       <x>10</x>
       <y>9</y>
-      <width>1331</width>
-      <height>911</height>
+      <width>1411</width>
+      <height>1101</height>
      </rect>
     </property>
     <layout class="QVBoxLayout" name="mainLayout1">
@@ -33,7 +33,7 @@
         <widget class="QWidget" name="initWidget" native="true">
          <property name="maximumSize">
           <size>
-           <width>310</width>
+           <width>340</width>
            <height>16777215</height>
           </size>
          </property>
@@ -42,8 +42,8 @@
            <rect>
             <x>10</x>
             <y>10</y>
-            <width>291</width>
-            <height>791</height>
+            <width>331</width>
+            <height>1001</height>
            </rect>
           </property>
           <property name="frameShape">
@@ -57,8 +57,8 @@
             <rect>
              <x>10</x>
              <y>10</y>
-             <width>281</width>
-             <height>761</height>
+             <width>307</width>
+             <height>981</height>
             </rect>
            </property>
            <layout class="QVBoxLayout" name="verticalLayout">
@@ -426,13 +426,52 @@
               </item>
              </layout>
             </item>
+            <item>
+             <widget class="QWidget" name="stress_orient_widget" native="true">
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>250</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>16777215</width>
+                <height>250</height>
+               </size>
+              </property>
+              <widget class="QWidget" name="verticalLayoutWidget_4">
+               <property name="geometry">
+                <rect>
+                 <x>9</x>
+                 <y>9</y>
+                 <width>291</width>
+                 <height>231</height>
+                </rect>
+               </property>
+               <layout class="QVBoxLayout" name="stress_orient_layout"/>
+              </widget>
+             </widget>
+            </item>
            </layout>
           </widget>
          </widget>
         </widget>
        </item>
        <item row="0" column="0">
-        <widget class="QWidget" name="mainPlotWidget" native="true"/>
+        <widget class="QWidget" name="mainPlotWidget" native="true">
+         <widget class="QWidget" name="verticalLayoutWidget_3">
+          <property name="geometry">
+           <rect>
+            <x>9</x>
+            <y>9</y>
+            <width>1041</width>
+            <height>1011</height>
+           </rect>
+          </property>
+          <layout class="QVBoxLayout" name="plotLayout"/>
+         </widget>
+        </widget>
        </item>
       </layout>
      </item>
@@ -449,7 +488,7 @@
          <rect>
           <x>10</x>
           <y>0</y>
-          <width>1311</width>
+          <width>1391</width>
           <height>51</height>
          </rect>
         </property>
@@ -464,7 +503,7 @@
           <rect>
            <x>10</x>
            <y>4</y>
-           <width>1291</width>
+           <width>1371</width>
            <height>51</height>
           </rect>
          </property>
@@ -536,8 +575,8 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1356</width>
-     <height>22</height>
+     <width>1435</width>
+     <height>21</height>
     </rect>
    </property>
    <property name="defaultUp">
