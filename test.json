@@ -22,6 +22,14 @@
       "inc_unc" : 10,
       "datum" : 1160
     }
+  ],
+  "input_file" : [
+    "D:/CarbonSAFE_PhaseII/3D-fault-meshes/F1.ts",
+    "D:/CarbonSAFE_PHASEII/3D-fault-meshes/F2.ts",
+    "D:/CarbonSAFE_PhaseII/3D-fault-meshes/F3.ts",
+    "D:/CarbonSAFE_PhaseII/3D-fault-meshes/F4.ts",
+    "D:/CarbonSAFE_PhaseII/3D-fault-meshes/F5.ts",
+    "D:/CarbonSAFE_PhaseII/3D-fault-meshes/F6.ts"
   ]
 }
 

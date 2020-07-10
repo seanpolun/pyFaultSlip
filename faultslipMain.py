@@ -9,8 +9,7 @@ import geopandas as gp
 import numba
 from shapely.geometry import LineString
 import json
-import trimesh
-import pymesh
+import meshio
 import warnings
 import datetime
 
@@ -84,7 +83,7 @@ def tsurf_read(infile):
     if ext != '.ts':
         raise ImportError('File is not GoCAD Tsurf')
     in_file_open = open(infile, "r+")
-    outfile = os.path.join(basename, '.ply')
+    outfile = basename + ".ply"
     raw_text = in_file_open.readlines()
     vertices = []
     faces = []
@@ -94,9 +93,84 @@ def tsurf_read(infile):
             vertices.append(line_split[2:5])
         elif line_split[0] == 'TRGL':
             faces.append(line_split[1:4])
-    out_mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
-    trimesh.exchange.export.export_mesh(out_mesh, outfile, filetype='ply')
+    # out_mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
+    # trimesh.exchange.export.export_mesh(out_mesh, outfile, file_type='ply')
+    vertic_np = np.asarray(vertices, dtype=float)
+    face_np = np.asarray(faces, dtype=int)
+    cells = [("triangle", face_np)]
+    meshio.write_points_cells(outfile, vertic_np, cells)
     return outfile
+
+
+@numba.njit()
+def calc_normal_points(p0, p1, p2):
+    """
+    Calculates plane normal for the three points defining a triangular plane.
+
+    Parameters
+    ----------
+    p0 : numpy.ndarray
+        a 1x3 vector of coordinates (cartesian)
+    p1 : numpy.ndarray
+        a 1x3 vector of coordinates (cartesian)
+    p2 : numpy.ndarray
+        a 1x3 vector of coordinates (cartesian)
+
+    Returns
+    -------
+    normal : numpy.ndarray
+        a 1x3 unit vector
+    midpoint : numpy.ndarray
+        a 1x3 vector of coordinates
+
+    """
+    x0, y0, z0 = p0
+    x1, y1, z1 = p1
+    x2, y2, z2 = p2
+    u = [x1-x0, y1-y0, z1-z0]
+    v = [x2-x0, y2-y0, z2-z0]
+    cx = (x0 + x1 + x2)/3
+    cy = (y0 + y1 + y2)/3
+    cz = (z0 + z1 + z2)/3
+    midpoint = np.array([cx, cy, cz])
+    normal = np.cross(u, v)
+    return normal, midpoint
+
+
+@numba.njit(parallel=True)
+def generate_mesh_normals(points, faces):
+    """
+    Generate normals and triangle midpoints for triangular mesh.
+    Parameters
+    ----------
+    points : numpy.ndarray
+        nx3 array with points in xyz cartesian coordinates (float)
+    faces : numpy.ndarray
+        nx3 array with indices for each point forming a triangular face (int)
+
+    Returns
+    -------
+    normals : numpy.ndarray
+        nx3 array of surface normals
+    midpoints : numpy.ndarray
+        nx3 array of triangular face midpoints
+
+    """
+    num_face = faces.shape[0]
+    out_shape = faces.shape
+    normals = np.empty(out_shape)
+    midpoints = np.empty(out_shape)
+    for i in numba.prange(num_face):
+        face = faces[i]
+        p0_ind, p1_ind, p2_ind = face
+        p0 = points[p0_ind]
+        p1 = points[p1_ind]
+        p2 = points[p2_ind]
+        normal, midpoint = calc_normal_points(p0, p1, p2)
+        normals[i] = normal
+        midpoints[i] = midpoint
+
+    return normals, midpoints
 
 
 @numba.njit
@@ -231,6 +305,7 @@ def define_principal_stresses(sv1, depth, shmin1, shmax1, hminaz, hmaxaz, sv_unc
     princ_stress_tensor_unc = np.array([[sigma1_std, 0., 0.], [0., sigma2_std, 0.], [0., 0., sigma3_std]])
     # rotated_axis = np.array(rotated_axis)
     return princ_stress_tensor, rotated_axis, princ_stress_tensor_unc, axis_std
+
 
 @numba.njit
 def rotate_plane_stress(sigma_1_ax, plane_norm, princ_stress_tensor):
@@ -404,7 +479,7 @@ def ecdf(indata):
 def monte_carlo_slip_tendency(pole, pole_unc, stress_tensor, stress_unc, axis, axis_unc, pf, mu,
                               mu_unc):
     """
-
+    Computes fault slip tendency for a specific planar node defined by a pole. 
     Parameters
     ----------
     pole : numpy.ndarray
@@ -431,8 +506,6 @@ def monte_carlo_slip_tendency(pole, pole_unc, stress_tensor, stress_unc, axis, a
     out_data : numpy.ndarray
         nx3 array [fluid pressure, mu, slip tendency]
     """
-    # TODO: Rewrite monte_carlo_slip_tendency() to take advantage of numba's CUDA support, may speed up simulation more,
-    #  currently takes ~2s per full lineament simulation, may get bogged down on detailed 3d faults
 
     # n_sims = 10000
     pf_range = 25.
@@ -581,12 +654,16 @@ def slip_tendency_2d(infile, inparams, mode):
 
 def slip_tendency_3d(in_meshes, inparams, mode):
     """
+    Calculate slip tendency for 3D mesh (enumerated in list).
 
     Parameters
     ----------
     in_meshes : str list
-    inparams
-    mode
+        List of file paths containing triangular meshes (.ts, .ply, .msh) for analysis
+    inparams : dict
+        Input parameters for model
+    mode : str
+        'det' for deterministic model, 'mc' for probabilistic model
 
     Returns
     -------
@@ -606,10 +683,17 @@ def slip_tendency_3d(in_meshes, inparams, mode):
     ref_depth = inparams['depth']
 
     # initialize attribute names for analysis
-    attr_50 = "PoreFluid_50"
-    attr_75 = "PoreFluid_75"
-    attr_99 = "PoreFluid_99"
-
+    # attr_50 = "PoreFluid_50"
+    # attr_75 = "PoreFluid_75"
+    # attr_99 = "PoreFluid_99"
+    prob_levels = [
+        1,
+        5,
+        15,
+        25,
+        33,
+        50
+    ]
 
     if mode == 'mc':
         stress_tensor, sigma1_ax, stress_unc, sig_1_std = define_principal_stresses(sv, ref_depth, shmin, shmax,
@@ -630,7 +714,7 @@ def slip_tendency_3d(in_meshes, inparams, mode):
 
     # convert stress tensors into gradients / km
     stress_grad_tensor = stress_tensor / ref_depth
-    stress_grad_unc = stress_unc / ref_depth
+    # stress_grad_unc = stress_unc / ref_depth
 
     for mesh_num in range(len(in_meshes)):
         mesh_path = in_meshes[mesh_num]
@@ -638,13 +722,13 @@ def slip_tendency_3d(in_meshes, inparams, mode):
         # handle gocad tsurf files (UGH)
         if ext == '.ts':
             outmesh = tsurf_read(mesh_path)
-            mesh = pymesh.load_mesh(outmesh)
-        elif ext == '.ply':
-            mesh = pymesh.load_mesh(mesh_path)
+            mesh = meshio.read(outmesh)
+        elif (ext == '.ply') | (ext == '.msh'):
+            mesh = meshio.read(mesh_path)
         else:
-            warnings.warn('Not expected mesh format, use .ply or .ts')
+            warnings.warn('Not expected mesh format, use .ply, .msh, or .ts')
             try:
-                mesh = pymesh.load_mesh(mesh_path)
+                mesh = meshio.read(mesh_path)
             except RuntimeError:
                 warnings.warn(['Unable to load mesh: ' + mesh_path + '. Skipping.'])
                 continue
@@ -652,18 +736,27 @@ def slip_tendency_3d(in_meshes, inparams, mode):
                 warnings.warn('Unable to find mesh: ' + mesh_path + '. Skipping.')
                 continue
 
-        num_faces = mesh.num_faces
+        faces = mesh.cells_dict['triangle']
+        points = mesh.points
+        num_faces = faces.shape[0]
+        normals, centroids = generate_mesh_normals(points, faces)
         # Extract mesh normals
-        mesh.add_attribute("face_normal")
-        normals = np.reshape(mesh.get_attribute("face_normal"), (num_faces, 3))
+        # mesh.add_attribute("face_normal")
+        # normals = np.reshape(mesh.get_attribute("face_normal"), (num_faces, 3))
         # Extract face centroids
-        mesh.add_attribute("face_centroid")
-        centroids = np.reshape(mesh.get_attribute("face_centroid"), (num_faces, 3))
+        # mesh.add_attribute("face_centroid")
+        # centroids = np.reshape(mesh.get_attribute("face_centroid"), (num_faces, 3))
 
         # initialize output attributes
-        pf_50_prob = np.empty(num_faces, dtype=float)
-        pf_75_prob = np.empty(num_faces, dtype=float)
-        pf_99_prob = np.empty(num_faces, dtype=float)
+        # pf_50_prob = np.empty(num_faces, dtype=float)
+        # pf_75_prob = np.empty(num_faces, dtype=float)
+        # pf_99_prob = np.empty(num_faces, dtype=float)
+        attrib_dict = {}
+        attrib_names = []
+        for prob in prob_levels:
+            attr_name = "ProbLevel_" + str(prob)
+            attrib_names.append(attr_name)
+            attrib_dict[attr_name] = [np.empty(num_faces, dtype=float)]
 
         for face_num in range(num_faces):
             fault_plane_pole = normals[face_num]
@@ -672,7 +765,7 @@ def slip_tendency_3d(in_meshes, inparams, mode):
             depth = ((tri_center[2] * -1) + datum) / 1000
 
             stress_tensor = stress_grad_tensor * depth
-            stress_unc = stress_grad_unc * depth
+            # stress_unc = stress_grad_unc * depth
             if mode == 'det':
                 slip_tend, fail_pressure = deterministic_slip_tend(fault_plane_pole, stress_tensor, sigma1_ax,
                                                                    inparams['pf'], inparams['mu'])
@@ -686,26 +779,35 @@ def slip_tendency_3d(in_meshes, inparams, mode):
                 pf_out = st_out[:, 0]
                 true_data = pf_out[st_out[:, 2] > st_out[:, 1]]
                 tend_out = ecdf(true_data)
-                ind_50 = (np.abs(tend_out[:, 1] - 0.5)).argmin()
-                ind_75 = (np.abs(tend_out[:, 1] - 0.75)).argmin()
-                ind_99 = (np.abs(tend_out[:, 1] - 0.99)).argmin()
-
-                pf_50_prob[face_num] = tend_out[ind_50, 0]
-                pf_75_prob[face_num] = tend_out[ind_75, 0]
-                pf_99_prob[face_num] = tend_out[ind_99, 0]
+                # ind_50 = (np.abs(tend_out[:, 1] - 0.5)).argmin()
+                # ind_75 = (np.abs(tend_out[:, 1] - 0.75)).argmin()
+                # ind_99 = (np.abs(tend_out[:, 1] - 0.99)).argmin()
+                #
+                # pf_50_prob[face_num] = tend_out[ind_50, 0]
+                # pf_75_prob[face_num] = tend_out[ind_75, 0]
+                # pf_99_prob[face_num] = tend_out[ind_99, 0]
+                # loop to generate output attributes
+                for prob in prob_levels:
+                    inds = (np.abs(tend_out[:, 1] - (prob / 100))).argmin()
+                    attr_name = attrib_names[prob_levels.index(prob)]
+                    attrib_dict[attr_name][0][face_num] = tend_out[inds, 0]
 
             else:
                 raise ValueError('Cannot resolve calculation mode / not implemented yet')
-        mesh.add_attribute(attr_50)
-        mesh.add_attribute(attr_75)
-        mesh.add_attribute(attr_99)
 
-        mesh.set_attribute(attr_50, pf_50_prob)
-        mesh.set_attribute(attr_75, pf_75_prob)
-        mesh.set_attribute(attr_99, pf_99_prob)
+        output_mesh = meshio.Mesh(points, [("triangle", faces)], cell_data=attrib_dict)
+        # mesh.add_attribute(attr_50)
+        # mesh.add_attribute(attr_75)
+        # mesh.add_attribute(attr_99)
+        #
+        # mesh.set_attribute(attr_50, pf_50_prob)
+        # mesh.set_attribute(attr_75, pf_75_prob)
+        # mesh.set_attribute(attr_99, pf_99_prob)
 
-        out_mesh_file = base_path + 'proc_' + datetime.datetime.now().strftime('%Y_%j_%H%M%S') + '.ply'
-        pymesh.save_mesh(out_mesh_file, mesh, [attr_50, attr_75, attr_99])
+        out_mesh_file = base_path + '_proc_' + datetime.datetime.now().strftime('%Y%m%d_%H%M%S') + '.msh'
+        # pymesh.save_mesh(out_mesh_file, mesh, *mesh.get_attribute_names())
+        output_mesh.write(out_mesh_file)
+    return
 
 
 def plot_all(out_features, flag, plot_bounds, plotmin, plotmax, rot_angle):
@@ -776,18 +878,19 @@ def plot_all(out_features, flag, plot_bounds, plotmin, plotmax, rot_angle):
     plt.show()
 
 
-def main(infile, params, type_flag, dim='2d'):
+def main(infile, params, type_flag, dim='3d'):
     if dim == '2d':
         results, bounds, plot_min, plot_max = slip_tendency_2d(infile, params, type_flag)
+        plot_all(results, type_flag, bounds, plot_min, plot_max, params['shmaxaz'])
     elif dim == '3d':
-        results, bounds, plot_min, plotmax = slip_tendency_3d(infile, params, type_flag)
+        slip_tendency_3d(infile, params, type_flag)
     else:
         raise(TypeError, "no defined type")
-    plot_all(results, type_flag, bounds, plot_min, plot_max, params['shmaxaz'])
+
 
 
 if __name__ == '__main__':
-    inFile_test = "./testdata/fake_lineaments.shp"
+    #inFile_test = "./testdata/fake_lineaments.shp"
     # inParams_test = {'dip': 90., 'dipunc': 10., 'shmax': 295.0, 'shMunc': 25.0, 'shmin': 77.0, 'shmiunc': 25.0,
     #                  'sv': 130.0, 'svunc': 25.0,
     #                  'depth': 5.0, 'shmaxaz': 75.0, 'shminaz': 165.0, 'azunc': 15.0, 'pf': 50.0, 'pfunc': 15.0,
@@ -797,4 +900,5 @@ if __name__ == '__main__':
     with open(in_file) as json_file:
         j_data = json.load(json_file)
     inParams_test = j_data['input_data'][0]
+    inFile_test = j_data['input_file']
     main(inFile_test, inParams_test, flag1)
