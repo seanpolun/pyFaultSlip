@@ -1,11 +1,29 @@
-#!/usr/bin/env python3
+# MIT License
+#
+# Copyright (c) 2020 Sean G Polun (University of Missouri)
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
 
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import Qt
-# from pyqtgraph import PlotWidget, plot
-# import pyqtgraph as pg
 import sys
-# import os
 from MainWindow_2d import Ui_MainWindow
 import faultslipMain
 import json
@@ -19,6 +37,14 @@ mpl.use('Qt5Agg')
 
 
 class IOModel(QtCore.QAbstractListModel):
+    """
+    Class for managing data for 2D GUI
+
+    Attributes:
+        inputs : dict
+        outputs : dict
+
+    """
     def __init__(self, *args, inputs=None, outputs=None, **kwargs):
         super(IOModel, self).__init__(*args, **kwargs)
         self.inputs = inputs or dict()
@@ -35,11 +61,35 @@ class IOModel(QtCore.QAbstractListModel):
         self.inputs['shmaxaz'] = 0.
 
     def json_load(self, infile):
+        """
+        Loads JSON file with saved parameters
+
+        Parameters
+        ----------
+        infile : file (str)
+            input JSON file
+
+        Returns
+        -------
+
+        """
         with open(infile) as load_file:
             j_data = json.load(load_file)
         self.inputs = j_data['input_data'][0]
 
     def json_save(self, outfile):
+        """
+        Saves JSON file with input parameters
+
+        Parameters
+        ----------
+        outfile : str
+            Path to JSON file for saving
+
+        Returns
+        -------
+
+        """
         outdict = dict()
         outdict['input_data'] = [self.inputs]
         with open(outfile, 'w') as dump_file:
