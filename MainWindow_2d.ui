@@ -95,28 +95,99 @@
             <item alignment="Qt::AlignHCenter">
              <widget class="QLabel" name="label">
               <property name="text">
-               <string>Stress Observation Depth [km]</string>
+               <string>Stress Observation Depth</string>
               </property>
              </widget>
             </item>
             <item>
              <layout class="QHBoxLayout" name="horizontalLayout">
               <item alignment="Qt::AlignHCenter">
-               <widget class="QDoubleSpinBox" name="depth_mean_box"/>
+               <widget class="QDoubleSpinBox" name="depth_mean_box">
+                <property name="suffix">
+                 <string>  km</string>
+                </property>
+                <property name="decimals">
+                 <number>0</number>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item alignment="Qt::AlignHCenter">
+             <widget class="QLabel" name="label_8">
+              <property name="text">
+               <string>Vertical Stress Gradient</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="horizontalLayout_5">
+              <item alignment="Qt::AlignHCenter">
+               <widget class="QDoubleSpinBox" name="sv_mean_box">
+                <property name="suffix">
+                 <string>  MPa/km</string>
+                </property>
+                <property name="decimals">
+                 <number>0</number>
+                </property>
+                <property name="maximum">
+                 <double>1000.000000000000000</double>
+                </property>
+                <property name="value">
+                 <double>20.000000000000000</double>
+                </property>
+               </widget>
+              </item>
+              <item alignment="Qt::AlignHCenter">
+               <widget class="QLabel" name="label_9">
+                <property name="text">
+                 <string>+/-</string>
+                </property>
+               </widget>
+              </item>
+              <item alignment="Qt::AlignHCenter">
+               <widget class="QDoubleSpinBox" name="sv_std_box">
+                <property name="decimals">
+                 <number>0</number>
+                </property>
+                <property name="maximum">
+                 <double>1000.000000000000000</double>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QComboBox" name="sv_error_unc_type">
+                <item>
+                 <property name="text">
+                  <string>%</string>
+                 </property>
+                </item>
+                <item>
+                 <property name="text">
+                  <string>MPa / km</string>
+                 </property>
+                </item>
+               </widget>
               </item>
              </layout>
             </item>
             <item alignment="Qt::AlignHCenter">
              <widget class="QLabel" name="label_3">
               <property name="text">
-               <string>Maximum Horizontal Stress Magnitude [MPa]</string>
+               <string>Maximum Horizontal Stress Gradient</string>
               </property>
              </widget>
             </item>
             <item>
              <layout class="QHBoxLayout" name="horizontalLayout_3">
-              <item alignment="Qt::AlignRight">
+              <item alignment="Qt::AlignHCenter">
                <widget class="QDoubleSpinBox" name="shmax_mean_box">
+                <property name="suffix">
+                 <string>  MPa/km</string>
+                </property>
+                <property name="decimals">
+                 <number>0</number>
+                </property>
                 <property name="maximum">
                  <double>1000.000000000000000</double>
                 </property>
@@ -129,11 +200,28 @@
                 </property>
                </widget>
               </item>
-              <item alignment="Qt::AlignLeft">
+              <item alignment="Qt::AlignHCenter">
                <widget class="QDoubleSpinBox" name="shmax_std_box">
+                <property name="decimals">
+                 <number>0</number>
+                </property>
                 <property name="maximum">
                  <double>1000.000000000000000</double>
                 </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QComboBox" name="shmax_unc_type">
+                <item>
+                 <property name="text">
+                  <string>%</string>
+                 </property>
+                </item>
+                <item>
+                 <property name="text">
+                  <string>MPa/km</string>
+                 </property>
+                </item>
                </widget>
               </item>
              </layout>
@@ -141,14 +229,20 @@
             <item alignment="Qt::AlignHCenter">
              <widget class="QLabel" name="label_6">
               <property name="text">
-               <string>Minimum Horizontal Stress Magnitude [MPa]</string>
+               <string>Minimum Horizontal Stress Gradient</string>
               </property>
              </widget>
             </item>
             <item>
              <layout class="QHBoxLayout" name="horizontalLayout_4">
-              <item alignment="Qt::AlignRight">
+              <item alignment="Qt::AlignHCenter">
                <widget class="QDoubleSpinBox" name="shmin_mean_box">
+                <property name="suffix">
+                 <string>  MPa/km</string>
+                </property>
+                <property name="decimals">
+                 <number>0</number>
+                </property>
                 <property name="maximum">
                  <double>1000.000000000000000</double>
                 </property>
@@ -161,43 +255,28 @@
                 </property>
                </widget>
               </item>
-              <item alignment="Qt::AlignLeft">
-               <widget class="QDoubleSpinBox" name="shmin_std_box">
-                <property name="maximum">
-                 <double>1000.000000000000000</double>
-                </property>
-               </widget>
-              </item>
-             </layout>
-            </item>
-            <item alignment="Qt::AlignHCenter">
-             <widget class="QLabel" name="label_8">
-              <property name="text">
-               <string>Vertical Stress Gradient [MPa / km]</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <layout class="QHBoxLayout" name="horizontalLayout_5">
-              <item alignment="Qt::AlignRight">
-               <widget class="QDoubleSpinBox" name="sv_mean_box">
-                <property name="maximum">
-                 <double>1000.000000000000000</double>
-                </property>
-               </widget>
-              </item>
               <item alignment="Qt::AlignHCenter">
-               <widget class="QLabel" name="label_9">
-                <property name="text">
-                 <string>+/-</string>
+               <widget class="QDoubleSpinBox" name="shmin_std_box">
+                <property name="decimals">
+                 <number>0</number>
                 </property>
-               </widget>
-              </item>
-              <item alignment="Qt::AlignLeft">
-               <widget class="QDoubleSpinBox" name="sv_std_box">
                 <property name="maximum">
                  <double>1000.000000000000000</double>
                 </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QComboBox" name="shmin_unc_type">
+                <item>
+                 <property name="text">
+                  <string>%</string>
+                 </property>
+                </item>
+                <item>
+                 <property name="text">
+                  <string>MPa/km</string>
+                 </property>
+                </item>
                </widget>
               </item>
              </layout>
@@ -205,16 +284,22 @@
             <item alignment="Qt::AlignHCenter">
              <widget class="QLabel" name="label_10">
               <property name="text">
-               <string>Maximum Horizontal Stress Azimuth [deg]</string>
+               <string>Maximum Horizontal Stress Azimuth</string>
               </property>
              </widget>
             </item>
             <item>
              <layout class="QHBoxLayout" name="horizontalLayout_6">
-              <item>
-               <widget class="QSpinBox" name="shmax_az_mean_box">
+              <item alignment="Qt::AlignHCenter">
+               <widget class="QDoubleSpinBox" name="shmax_az_mean_box">
+                <property name="suffix">
+                 <string>  deg.</string>
+                </property>
+                <property name="decimals">
+                 <number>0</number>
+                </property>
                 <property name="maximum">
-                 <number>360</number>
+                 <double>360.000000000000000</double>
                 </property>
                </widget>
               </item>
@@ -225,24 +310,48 @@
                 </property>
                </widget>
               </item>
+              <item alignment="Qt::AlignHCenter">
+               <widget class="QDoubleSpinBox" name="shmax_az_std_box">
+                <property name="decimals">
+                 <number>0</number>
+                </property>
+               </widget>
+              </item>
               <item>
-               <widget class="QSpinBox" name="shmax_az_std_box"/>
+               <widget class="QComboBox" name="az_unc_type">
+                <item>
+                 <property name="text">
+                  <string>%</string>
+                 </property>
+                </item>
+                <item>
+                 <property name="text">
+                  <string>deg.</string>
+                 </property>
+                </item>
+               </widget>
               </item>
              </layout>
             </item>
             <item alignment="Qt::AlignHCenter">
              <widget class="QLabel" name="label_12">
               <property name="text">
-               <string>Minimum Horizontal Stress Azimuth [deg]</string>
+               <string>Minimum Horizontal Stress Azimuth</string>
               </property>
              </widget>
             </item>
             <item>
              <layout class="QHBoxLayout" name="horizontalLayout_7">
-              <item>
-               <widget class="QSpinBox" name="shmin_az_mean_box">
+              <item alignment="Qt::AlignHCenter">
+               <widget class="QDoubleSpinBox" name="shmin_az_mean_box">
+                <property name="suffix">
+                 <string>  deg.</string>
+                </property>
+                <property name="decimals">
+                 <number>0</number>
+                </property>
                 <property name="maximum">
-                 <number>360</number>
+                 <double>360.000000000000000</double>
                 </property>
                </widget>
               </item>
@@ -253,25 +362,63 @@
                 </property>
                </widget>
               </item>
+              <item alignment="Qt::AlignHCenter">
+               <widget class="QDoubleSpinBox" name="shmin_az_std_box">
+                <property name="decimals">
+                 <number>0</number>
+                </property>
+               </widget>
+              </item>
               <item>
-               <widget class="QSpinBox" name="shmin_az_std_box"/>
+               <widget class="QComboBox" name="az_unc_type2">
+                <item>
+                 <property name="text">
+                  <string>%</string>
+                 </property>
+                </item>
+                <item>
+                 <property name="text">
+                  <string>deg.</string>
+                 </property>
+                </item>
+               </widget>
               </item>
              </layout>
             </item>
             <item alignment="Qt::AlignHCenter">
              <widget class="QLabel" name="label_14">
               <property name="text">
-               <string>Vertical Stress Inclination Uncertainty [deg]</string>
+               <string>Vertical Stress Inclination Uncertainty</string>
               </property>
              </widget>
             </item>
             <item>
              <layout class="QHBoxLayout" name="horizontalLayout_8">
               <item alignment="Qt::AlignHCenter">
-               <widget class="QSpinBox" name="sv_inc_unc_box">
-                <property name="value">
-                 <number>10</number>
+               <widget class="QDoubleSpinBox" name="sv_inc_unc_box">
+                <property name="suffix">
+                 <string>  deg.</string>
                 </property>
+                <property name="decimals">
+                 <number>0</number>
+                </property>
+                <property name="value">
+                 <double>10.000000000000000</double>
+                </property>
+               </widget>
+              </item>
+              <item alignment="Qt::AlignHCenter">
+               <widget class="QComboBox" name="inc_unc_type">
+                <item>
+                 <property name="text">
+                  <string>%</string>
+                 </property>
+                </item>
+                <item>
+                 <property name="text">
+                  <string>deg.</string>
+                 </property>
+                </item>
                </widget>
               </item>
              </layout>
@@ -279,19 +426,22 @@
             <item alignment="Qt::AlignHCenter">
              <widget class="QLabel" name="label_15">
               <property name="text">
-               <string>Dip Angle [right hand rule, deg]</string>
+               <string>Dip Angle (right hand rule)</string>
               </property>
              </widget>
             </item>
             <item>
              <layout class="QHBoxLayout" name="horizontalLayout_9">
-              <item>
-               <widget class="QSpinBox" name="dip_mean_box">
-                <property name="maximum">
-                 <number>90</number>
+              <item alignment="Qt::AlignHCenter">
+               <widget class="QDoubleSpinBox" name="dip_mean_box">
+                <property name="suffix">
+                 <string>  deg. </string>
+                </property>
+                <property name="decimals">
+                 <number>0</number>
                 </property>
                 <property name="value">
-                 <number>90</number>
+                 <double>90.000000000000000</double>
                 </property>
                </widget>
               </item>
@@ -302,11 +452,28 @@
                 </property>
                </widget>
               </item>
-              <item>
-               <widget class="QSpinBox" name="dip_std_box">
-                <property name="value">
-                 <number>10</number>
+              <item alignment="Qt::AlignHCenter">
+               <widget class="QDoubleSpinBox" name="dip_std_box">
+                <property name="decimals">
+                 <number>0</number>
                 </property>
+                <property name="value">
+                 <double>10.000000000000000</double>
+                </property>
+               </widget>
+              </item>
+              <item alignment="Qt::AlignHCenter">
+               <widget class="QComboBox" name="comboBox_2">
+                <item>
+                 <property name="text">
+                  <string>%</string>
+                 </property>
+                </item>
+                <item>
+                 <property name="text">
+                  <string>deg.</string>
+                 </property>
+                </item>
                </widget>
               </item>
              </layout>
@@ -374,6 +541,16 @@
              </layout>
             </item>
             <item alignment="Qt::AlignHCenter">
+             <widget class="QLabel" name="label_22">
+              <property name="text">
+               <string>Hydrostatic Pressure Gradient [MPa/km]</string>
+              </property>
+             </widget>
+            </item>
+            <item alignment="Qt::AlignHCenter">
+             <widget class="QDoubleSpinBox" name="doubleSpinBox"/>
+            </item>
+            <item alignment="Qt::AlignHCenter">
              <widget class="QLabel" name="label_21">
               <property name="text">
                <string>Failure Percentile Cutoff</string>
@@ -383,12 +560,12 @@
             <item>
              <layout class="QHBoxLayout" name="horizontalLayout_2">
               <item alignment="Qt::AlignHCenter">
-               <widget class="QSpinBox" name="fail_percentile_box">
-                <property name="maximum">
-                 <number>100</number>
+               <widget class="QDoubleSpinBox" name="fail_percentile_box">
+                <property name="decimals">
+                 <number>0</number>
                 </property>
                 <property name="value">
-                 <number>50</number>
+                 <double>50.000000000000000</double>
                 </property>
                </widget>
               </item>
@@ -528,17 +705,11 @@
              </widget>
             </item>
             <item>
-             <spacer name="horizontalSpacer">
-              <property name="orientation">
-               <enum>Qt::Horizontal</enum>
+             <widget class="QProgressBar" name="progressBar">
+              <property name="value">
+               <number>24</number>
               </property>
-              <property name="sizeHint" stdset="0">
-               <size>
-                <width>40</width>
-                <height>20</height>
-               </size>
-              </property>
-             </spacer>
+             </widget>
             </item>
            </layout>
           </item>
@@ -588,6 +759,7 @@
     </property>
     <addaction name="actionOpen_json_file"/>
     <addaction name="actionSave_json_settings"/>
+    <addaction name="actionAdditional_Settings"/>
    </widget>
    <addaction name="menuFile"/>
   </widget>
@@ -600,6 +772,11 @@
   <action name="actionSave_json_settings">
    <property name="text">
     <string>Save json settings</string>
+   </property>
+  </action>
+  <action name="actionAdditional_Settings">
+   <property name="text">
+    <string>Additional Settings</string>
    </property>
   </action>
  </widget>

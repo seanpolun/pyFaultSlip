@@ -33,7 +33,9 @@ import json
 import meshio
 import warnings
 import datetime
-
+import trimesh
+import csv
+import data_model
 nsims = 10000
 
 
@@ -121,6 +123,40 @@ def tsurf_read(infile):
     cells = [("triangle", face_np)]
     meshio.write_points_cells(outfile, vertic_np, cells)
     return outfile
+
+
+def lineament_from_mesh(in_meshes, depth, outfile, epsg):
+    """
+
+    Parameters
+    ----------
+    epsg
+    in_meshes
+    depth
+    outfile
+
+    Returns
+    -------
+
+    """
+    lin_list = []
+    name_list = []
+    for mesh_num in range(len(in_meshes)):
+        mesh_path = in_meshes[mesh_num]
+        mesh_name = os.path.basename(mesh_path)
+        out_lin_name = mesh_name + str(depth)
+        mesh = trimesh.load_mesh(mesh_path)
+        line = trimesh.intersections.mesh_plane(mesh, [0, 0, 1], [0, 0, depth])
+        line_dim = line.shape
+        line_flat = line.reshape(line_dim[0]*line_dim[1], line_dim[2])
+        line_flat_unq = np.unique(line_flat, axis=0)
+        line_geom = LineString(line_flat_unq[:, 0:2])
+        name_list.append(out_lin_name)
+        lin_list.append(line_geom)
+    geom_dict = {'Name': name_list, 'geometry': lin_list}
+    out_gdf = gp.GeoDataFrame(geom_dict, crs=epsg)
+    out_gdf.to_file(filename=outfile, driver='ESRI Shapefile')
+
 
 
 @numba.njit()
@@ -273,7 +309,8 @@ def define_principal_stresses(sv1, depth, shmin1, shmax1, hminaz, hmaxaz, sv_unc
     v_tilt_unc = math.radians(v_tilt_unc)
     if round(abs(hmaxaz - hminaz), 0) != 90.:
         raise ValueError('hmin and hmax are not orthogonal')
-    hmaxaz = math.radians(hmaxaz)
+    # TODO: Truly fix azimuth issue with stress. Currently add 90 degrees to max stress direction.
+    hmaxaz = math.radians(hmaxaz) + (math.pi/2)
 
     if is_3d:
         sv1 = sv1 / depth
@@ -286,7 +323,7 @@ def define_principal_stresses(sv1, depth, shmin1, shmax1, hminaz, hmaxaz, sv_unc
         shmax = shmax_unc * np.random.randn() + shmax1
         shmin = shmin_unc * np.random.randn() + shmin1
 
-        if sv > shmax > shmin:
+        if sv1 > shmax1 > shmin1:
             sigma1 = sv
             sigma2 = shmax
             sigma3 = shmin
@@ -299,12 +336,12 @@ def define_principal_stresses(sv1, depth, shmin1, shmax1, hminaz, hmaxaz, sv_unc
             sigma1 = shmax
             az_rad = h_az_unc * np.random.randn() + hmaxaz
             az_dip_rad = v_tilt_unc * np.random.randn() + 0.  # average dip is 0
-            if shmax > sv > shmin:
+            if shmax1 > sv1 > shmin1:
                 sigma2 = sv
                 sigma3 = shmin
                 rotated_axis = np.asarray([math.sin(az_rad) * math.cos(az_dip_rad), math.cos(az_rad) * math.cos(az_dip_rad),
                                            math.sin(az_dip_rad)])
-            elif shmax > shmin > sv:
+            elif shmax1 > shmin1 > sv1:
                 sigma2 = shmin
                 sigma3 = sv
                 rotated_axis = np.asarray([math.sin(az_rad) * math.cos(az_dip_rad), math.cos(az_rad) * math.cos(az_dip_rad),
@@ -325,7 +362,7 @@ def define_principal_stresses(sv1, depth, shmin1, shmax1, hminaz, hmaxaz, sv_unc
     princ_stress_tensor = np.array([[sigma1_mean, 0., 0.], [0., sigma2_mean, 0.], [0., 0., sigma3_mean]])
     princ_stress_tensor_unc = np.array([[sigma1_std, 0., 0.], [0., sigma2_std, 0.], [0., 0., sigma3_std]])
     # rotated_axis = np.array(rotated_axis)
-    return princ_stress_tensor, rotated_axis, princ_stress_tensor_unc, axis_std
+    return princ_stress_tensor, rotated_axis, princ_stress_tensor_unc, axis_std, axis_out
 
 
 @numba.njit
@@ -565,7 +602,7 @@ def monte_carlo_slip_tendency(pole, pole_unc, stress_tensor, stress_unc, axis, a
 
 
 # @numba.jit(forceobj=True, parallel=True)
-def slip_tendency_2d(infile, inparams, mode):
+def slip_tendency_2d(infile, inparams, mode, dump_for_fsp=False):
     """
     Compute a  2d (i.e. where the 2d geometry is only known) slip tendency analysis. Outputs a map, as well
     as a table with the following schema:
@@ -573,6 +610,7 @@ def slip_tendency_2d(infile, inparams, mode):
 
     Parameters
     ----------
+    dump_for_fsp
     infile : str
         Path to ESRI shapefile (or compatible with geopandas). Should be line objects with a 2d geometry.
     inparams : dict
@@ -597,6 +635,12 @@ def slip_tendency_2d(infile, inparams, mode):
     shmin_unc = inparams['shmiunc']
     shmax_unc = inparams['shMunc']
     depth = inparams['depth']
+    fail_threshold = inparams['fail_percent']
+    # TODO: Implement this in GUI
+    hydrostatic_grad = inparams['hydrostatic_gradient']
+    hydrostatic_pres = hydrostatic_grad * depth
+    # fail_threshold = fail_threshold / 100.
+
     if mode == 'mc':
         stress_tensor, sigma1_ax, stress_unc, sig_1_std = define_principal_stresses(sv, depth, shmin, shmax, shminaz, shmaxaz,
                                                                                     sv_unc=sv_unc1, shmin_unc=shmin_unc,
@@ -615,6 +659,10 @@ def slip_tendency_2d(infile, inparams, mode):
     num_features = len(lineaments)
     out_features = []
     flat_out_features = []
+    if dump_for_fsp:
+        fsp_dump = []
+        dump_dip = 90.
+        csv_file = "D:/CarbonSAFE_PhaseII/3D-fault-meshes/fsp_dump.csv"
     for i in range(num_features):
         work_feat = lineaments[i]
         # work_feat_interp = redistribute_vertices(work_feat, min_node_distance)
@@ -638,7 +686,14 @@ def slip_tendency_2d(infile, inparams, mode):
             point2 = work_feat_coords[j + 1]
             azimuth = math.radians(point_az(point1[0], point2[0], point1[1], point2[1]))
             dip_rad = math.radians(dip)
-
+            if dump_for_fsp:
+                point_diff = (point1[0] - point2[0], point1[1] - point2[1])
+                seg_len = math.sqrt(point_diff[0]**2 + point_diff[1]**2) / 1000.
+                strike = math.degrees(azimuth)
+                x_dump = point1[0] / 1000
+                y_dump = point1[1] / 1000
+                dump_row = [x_dump, y_dump, strike, dump_dip, seg_len]
+                fsp_dump.append(dump_row)
             if mode == 'det':
 
                 fault_plane = Plane(azimuth, dip_rad)
@@ -658,9 +713,10 @@ def slip_tendency_2d(infile, inparams, mode):
                 pf_out = st_out[:, 0]
                 true_data = pf_out[st_out[:, 2] > st_out[:, 1]]
                 tend_out = ecdf(true_data)
-                ind_50 = (np.abs(tend_out[:, 1] - 0.5)).argmin()
+                tend_out[:, 0] = tend_out[:, 0] - hydrostatic_pres
+                ind_fail = (np.abs(tend_out[:, 1] - fail_threshold)).argmin()
                 outrow = [j, work_feat_coords[j][0], work_feat_coords[j][1], work_feat_coords[j + 1][0],
-                          work_feat_coords[j + 1][1], tend_out[ind_50, 0]]
+                          work_feat_coords[j + 1][1], tend_out[ind_fail, 0]]
             else:
                 raise ValueError('Cannot resolve calculation mode / not implemented yet')
             flat_out_features.append(outrow)
@@ -670,6 +726,10 @@ def slip_tendency_2d(infile, inparams, mode):
     flat_out_features = np.array(flat_out_features)
     plotmin = np.min(flat_out_features[:, 5])
     plotmax = np.max(flat_out_features[:, 5])
+    if dump_for_fsp:
+        with open(csv_file, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerows(fsp_dump)
     return out_features, bounds1, plotmin, plotmax
 
 
@@ -696,24 +756,26 @@ def slip_tendency_3d(in_meshes, inparams, mode):
     sv = inparams['sv']
     shmaxaz = inparams['shmaxaz']
     shminaz = inparams['shminaz']
+    # TODO: Implement % uncertainty
     sv_unc1 = inparams['svunc']
     az_unc = inparams['azunc']
     shmin_unc = inparams['shmiunc']
     shmax_unc = inparams['shMunc']
     datum = inparams['datum']
     ref_depth = inparams['depth']
+    # TODO: Implement this in GUI
+    hydrostatic_grad = inparams['hydrostatic_gradient']
 
     # initialize attribute names for analysis
     # attr_50 = "PoreFluid_50"
     # attr_75 = "PoreFluid_75"
     # attr_99 = "PoreFluid_99"
     prob_levels = [
-        1,
-        5,
         15,
-        25,
-        33,
-        50
+        18,
+        20,
+        22,
+        25
     ]
 
     if mode == 'mc':
@@ -734,6 +796,7 @@ def slip_tendency_3d(in_meshes, inparams, mode):
         raise ValueError('No recognized processing mode [''mc'' or ''det'']')
 
     # convert stress tensors into gradients / km
+    # TODO: Fix this shit
     stress_grad_tensor = stress_tensor / ref_depth
     # stress_grad_unc = stress_unc / ref_depth
 
@@ -786,6 +849,7 @@ def slip_tendency_3d(in_meshes, inparams, mode):
             depth = ((tri_center[2] * -1) + datum) / 1000
 
             stress_tensor = stress_grad_tensor * depth
+            hydrostatic_pres = hydrostatic_grad * depth
             # stress_unc = stress_grad_unc * depth
             if mode == 'det':
                 slip_tend, fail_pressure = deterministic_slip_tend(fault_plane_pole, stress_tensor, sigma1_ax,
@@ -800,6 +864,7 @@ def slip_tendency_3d(in_meshes, inparams, mode):
                 pf_out = st_out[:, 0]
                 true_data = pf_out[st_out[:, 2] > st_out[:, 1]]
                 tend_out = ecdf(true_data)
+                tend_out[:, 0] = tend_out[:, 0] - hydrostatic_pres
                 # ind_50 = (np.abs(tend_out[:, 1] - 0.5)).argmin()
                 # ind_75 = (np.abs(tend_out[:, 1] - 0.75)).argmin()
                 # ind_99 = (np.abs(tend_out[:, 1] - 0.99)).argmin()
@@ -825,7 +890,7 @@ def slip_tendency_3d(in_meshes, inparams, mode):
         # mesh.set_attribute(attr_75, pf_75_prob)
         # mesh.set_attribute(attr_99, pf_99_prob)
 
-        out_mesh_file = base_path + '_proc_' + datetime.datetime.now().strftime('%Y%m%d_%H%M%S') + '.msh'
+        out_mesh_file = base_path + '_proc_norm' + datetime.datetime.now().strftime('%Y%m%d_%H%M%S') + '.msh'
         # pymesh.save_mesh(out_mesh_file, mesh, *mesh.get_attribute_names())
         output_mesh.write(out_mesh_file)
     return
@@ -854,8 +919,8 @@ def plot_all(out_features, flag, plot_bounds, plotmin, plotmax, rot_angle):
     elif flag == 'mc':
         # plotmin1 = plotmin - 5
         # plotmax1 = plotmax + 5
-        plotmin1 = 35
-        plotmax1 = 48
+        plotmin1 = 0
+        plotmax1 = 5
         norm1 = mpl.colors.Normalize(vmin=plotmin1, vmax=plotmax1)
     fig, ax = plt.subplots(dpi=300)
     # fig.set_size_inches(6, 4)
@@ -885,7 +950,7 @@ def plot_all(out_features, flag, plot_bounds, plotmin, plotmax, rot_angle):
     if flag == 'det':
         axcb.set_label('Slip Tendency')
     elif flag == 'mc':
-        axcb.set_label('Failure Pressure [MPa]')
+        axcb.set_label('Delta P over Hydrostatic to Failure [MPa]')
     ax2 = fig.add_axes([0.15, 0.1, 0.2, 0.2])
     str_img = plt.imread('./resources/h_stresses.png')
     stress_im = ax2.imshow(str_img)
@@ -901,7 +966,7 @@ def plot_all(out_features, flag, plot_bounds, plotmin, plotmax, rot_angle):
 
 def main(infile, params, type_flag, dim='3d'):
     if dim == '2d':
-        results, bounds, plot_min, plot_max = slip_tendency_2d(infile, params, type_flag)
+        results, bounds, plot_min, plot_max = slip_tendency_2d(infile, params, type_flag, dump_for_fsp=True)
         plot_all(results, type_flag, bounds, plot_min, plot_max, params['shmaxaz'])
     elif dim == '3d':
         slip_tendency_3d(infile, params, type_flag)
@@ -917,7 +982,7 @@ if __name__ == '__main__':
     #                  'depth': 5.0, 'shmaxaz': 75.0, 'shminaz': 165.0, 'azunc': 15.0, 'pf': 50.0, 'pfunc': 15.0,
     #                  'mu': 0.7, 'mu_unc': 0.05, 'datum': 1160}
     flag1 = 'mc'
-    in_file = './test.json'
+    in_file = 'test4.json'
     with open(in_file) as json_file:
         j_data = json.load(json_file)
     inParams_test = j_data['input_data'][0]

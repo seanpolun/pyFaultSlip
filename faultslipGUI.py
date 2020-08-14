@@ -101,6 +101,8 @@ class MplCanvas(FigureCanvasQTAgg):
     def __init__(self, parent=None, width=5, height=4, dpi=100):
         self.fig = Figure(figsize=(width, height), dpi=dpi)
         self.axes = self.fig.add_subplot(111)
+        self.axcb = plt.colorbar(mpl.cm.ScalarMappable(cmap=plt.get_cmap('jet_r'), norm=mpl.colors.Normalize(vmin=0,
+                                                                                                             vmax=50)))
         super(MplCanvas, self).__init__(self.fig)
 
 
@@ -248,7 +250,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.model.inputs['pf'] = self.max_pf_box.value()
 
     def fail_percentile_changed(self):
-        self.model.inputs['fail_percent'] = self.fail_percentile_box.value()
+        int_fail_perc = self.fail_percentile_box.value()
+        self.model.inputs['fail_percent'] = int_fail_perc / 100.
 
     def det_model_enabled(self):
         self.model.inputs['flag'] = 'det'
@@ -279,6 +282,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # initialize model data
         outputs = self.model.outputs
         inputs = self.model.inputs
+        self.canvas.axes.clear()
+        self.canvas.axcb.remove()
         plot_bounds = outputs['bounds']
         flag = inputs['flag']
         out_features = outputs['results']
@@ -306,10 +311,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             plotmax1 = plotmax + 0.01
             norm1 = mpl.colors.Normalize(vmin=plotmin1, vmax=plotmax1)
         elif flag == 'mc':
-            # plotmin1 = plotmin - 5
-            # plotmax1 = plotmax + 5
-            plotmin1 = 35
-            plotmax1 = 48
+            plotmin1 = plotmin - 5
+            plotmax1 = plotmax + 5
+            # plotmin1 = 35
+            # plotmax1 = 48
             norm1 = mpl.colors.Normalize(vmin=plotmin1, vmax=plotmax1)
         fig = self.canvas.fig
         ax = self.canvas.axes
@@ -335,11 +340,12 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             lc.set_array(slip_tendency)
             lc.set_linewidth(2)
             ax.add_collection(lc)
-        axcb = fig.colorbar(lc)
+        self.canvas.axcb = fig.colorbar(lc)
         if flag == 'det':
-            axcb.set_label('Slip Tendency')
+            self.canvas.axcb.set_label('Slip Tendency')
         elif flag == 'mc':
-            axcb.set_label('Failure Pressure [MPa]')
+            self.canvas.axcb.set_label('Failure Pressure [MPa]')
+        self.canvas.draw()
         self.show()
 
     def execute_model(self):

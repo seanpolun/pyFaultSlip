@@ -2,35 +2,29 @@
   "input_data" : [
     {
       "dip" : 90,
-      "dipunc" : 10,
+      "dip_unc" : 10,
       "shmax" : 295.0,
-      "shMunc" : 25.0,
+      "shmax_unc" : 25.0,
       "shmin" : 77.0,
-      "shmiunc" : 25.0,
+      "shmin_unc" : 25.0,
       "sv" : 130.0,
-      "svunc" : 25.0,
+      "sv_unc" : 25.0,
       "depth" : 5.0,
       "shmaxaz" : 75,
       "shminaz": 165,
-      "azunc" : 15,
+      "az_unc" : 15,
       "pf" : 50.0,
-      "pfunc" : 15.0,
+      "pf_unc" : 15.0,
       "mu" : 0.7,
       "mu_unc" : 0.05,
       "flag" : "mc",
-      "fail_percent" : 50,
+      "fail_percent" : 0.5,
       "inc_unc" : 10,
       "datum" : 1160
     }
   ],
-  "input_file" : [
-    "D:/CarbonSAFE_PhaseII/3D-fault-meshes/F1.ts",
-    "D:/CarbonSAFE_PHASEII/3D-fault-meshes/F2.ts",
-    "D:/CarbonSAFE_PhaseII/3D-fault-meshes/F3.ts",
-    "D:/CarbonSAFE_PhaseII/3D-fault-meshes/F4.ts",
-    "D:/CarbonSAFE_PhaseII/3D-fault-meshes/F5.ts",
-    "D:/CarbonSAFE_PhaseII/3D-fault-meshes/F6.ts"
-  ]
+  "input_file" :  "D:/CarbonSAFE_PhaseII/3D-fault-meshes/lineaments-1000-utm.shp"
+
 }
 
 
