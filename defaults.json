@@ -1,0 +1,15 @@
+{
+  "input_data" : [
+    {
+      "dip" : 90,
+      "sh_max_az" : 75,
+      "sh_min_az": 165,
+      "mu" : 0.7,
+      "general_unc" : 0.15,
+      "pf" : 50.0,
+      "density" : 2500,
+      "hydro" : 9.0,
+      "az_unc" : 15.0
+    }
+  ]
+}

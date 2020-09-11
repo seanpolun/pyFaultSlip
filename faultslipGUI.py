@@ -22,6 +22,7 @@
 
 
 from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt5.QtWidgets import QMessageBox
 from PyQt5.QtCore import Qt
 import sys
 from MainWindow_2d import Ui_MainWindow
@@ -33,6 +34,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
+import data_model
 mpl.use('Qt5Agg')
 
 
@@ -49,16 +51,26 @@ class IOModel(QtCore.QAbstractListModel):
         super(IOModel, self).__init__(*args, **kwargs)
         self.inputs = inputs or dict()
         self.outputs = outputs or dict()
+        self.input_model = data_model.ModelInputs(self.inputs)
+
+        self.default_stress_state = "Strike-Slip"
+        self.inputs['stress'] = self.default_stress_state
+        self.default_shmax = self.input_model.ShMaxSS
+        self.default_shmin = self.input_model.ShMinSS
+        self.failure_cutoff = 0.5
+        self.run_type = 'mc'
+        self.inputs['mode'] = 'mc'
 
         # initialize defaults
-        self.inputs['flag'] = 'mc'
-        self.inputs['dip'] = 90
-        self.inputs['dipunc'] = 10
-        self.inputs['mu'] = 0.6
-        self.inputs['mu_unc'] = 0.1
-        self.inputs['pf'] = 75.0
-        self.inputs['fail_percent'] = 50
-        self.inputs['shmaxaz'] = 0.
+        # self.inputs['flag'] = 'mc'
+        # self.inputs['dip'] = 90
+        # self.inputs['dipunc'] = 10
+        # self.inputs['mu'] = 0.6
+        # self.inputs['mu_unc'] = 0.1
+        # self.inputs['pf'] = 75.0
+        # self.inputs['fail_percent'] = 50
+        # self.inputs['shmaxaz'] = 0.
+
 
     def json_load(self, infile):
         """
@@ -76,6 +88,7 @@ class IOModel(QtCore.QAbstractListModel):
         with open(infile) as load_file:
             j_data = json.load(load_file)
         self.inputs = j_data['input_data'][0]
+        self.input_model = data_model.ModelInputs(self.inputs)
 
     def json_save(self, outfile):
         """
@@ -95,6 +108,15 @@ class IOModel(QtCore.QAbstractListModel):
         with open(outfile, 'w') as dump_file:
             json.dump(outdict, dump_file, indent=4, sort_keys=True)
 
+    def update_input_model(self):
+        """
+
+        Returns
+        -------
+
+        """
+        self.input_model = data_model.ModelInputs(self.inputs)
+
 
 class MplCanvas(FigureCanvasQTAgg):
 
@@ -104,6 +126,24 @@ class MplCanvas(FigureCanvasQTAgg):
         self.axcb = plt.colorbar(mpl.cm.ScalarMappable(cmap=plt.get_cmap('jet_r'), norm=mpl.colors.Normalize(vmin=0,
                                                                                                              vmax=50)))
         super(MplCanvas, self).__init__(self.fig)
+
+
+def switch_unc_type(widget_obj, data_object, reference_widget, unc_type):
+    if unc_type == "%":
+        widget_obj.setValue(data_object.std_perc_100())
+        widget_obj.setRange(0., 100.)
+        widget_obj.setSingleStep(1.)
+        widget_obj.update()
+        # print(widget_obj.value())
+        print(data_object.std_perc)
+        print(data_object.std_unit())
+    elif unc_type.strip() == data_object.unit_name:
+        widget_obj.setValue(data_object.std_unit())
+        widget_obj.setRange(reference_widget.minimum(), reference_widget.maximum())
+        widget_obj.setSingleStep(reference_widget.singleStep())
+        widget_obj.update()
+        print(data_object.std_perc)
+        print(data_object.std_unit())
 
 
 class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
@@ -123,28 +163,55 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.toolbar = NavigationToolbar(self.canvas, self)
         self.plotLayout.addWidget(self.toolbar)
         self.plotLayout.addWidget(self.canvas)
+        self.active_shmax = self.model.default_shmax
+        self.active_shmin = self.model.default_shmin
+        self.active_stress = self.model.default_stress_state
 
         # setup input boxes
         self.depth_mean_box.valueChanged.connect(self.depth_changed)
-        self.shmax_mean_box.valueChanged.connect(self.shmax_mean_changed)
-        self.shmax_std_box.valueChanged.connect(self.shmax_std_changed)
-        self.shmin_mean_box.valueChanged.connect(self.shmin_mean_changed)
-        self.shmin_std_box.valueChanged.connect(self.shmin_std_changed)
+
         self.sv_mean_box.valueChanged.connect(self.sv_mean_changed)
         self.sv_std_box.valueChanged.connect(self.sv_std_changed)
+        self.sv_unc_type.currentIndexChanged.connect(self.sv_unc_type_changed)
+
+        self.stress_type_box.currentIndexChanged.connect(self.stress_type_box_changed)
+
+        self.shmax_mean_box.valueChanged.connect(self.shmax_mean_changed)
+        self.shmax_std_box.valueChanged.connect(self.shmax_std_changed)
+        self.shmax_unc_type.currentIndexChanged.connect(self.shmax_unc_type_changed)
+
+        self.shmin_mean_box.valueChanged.connect(self.shmin_mean_changed)
+        self.shmin_std_box.valueChanged.connect(self.shmin_std_changed)
+        self.shmin_unc_type.currentIndexChanged.connect(self.shmin_unc_type_changed)
+
         self.shmax_az_mean_box.valueChanged.connect(self.shmax_az_mean_changed)
-        self.shmin_az_mean_box.valueChanged.connect(self.shmin_az_mean_changed)
         self.shmax_az_std_box.valueChanged.connect(self.shmax_az_std_changed)
+        self.az_unc_type.currentIndexChanged.connect(self.az_unc_type_changed)
+
+        self.shmin_az_mean_box.valueChanged.connect(self.shmin_az_mean_changed)
         self.shmin_az_std_box.valueChanged.connect(self.shmin_az_std_changed)
+        self.az_unc_type2.currentIndexChanged.connect(self.az_unc_type2_changed)
+
         self.sv_inc_unc_box.valueChanged.connect(self.sv_inc_unc_changed)
+        # self.inc_unc_type.currentIndexChanged.connect(self.inc_unc_type_changed)
+
         self.dip_mean_box.valueChanged.connect(self.dip_mean_changed)
         self.dip_std_box.valueChanged.connect(self.dip_std_changed)
+        self.dip_unc_type.currentIndexChanged.connect(self.dip_unc_type_changed)
+
         self.mu_mean_box.valueChanged.connect(self.mu_mean_changed)
         self.mu_std_box.valueChanged.connect(self.mu_std_changed)
+
         self.max_pf_box.valueChanged.connect(self.max_pf_changed)
+
+        self.hydro_gradient_box.valueChanged.connect(self.hydro_gradient_changed)
+
         self.fail_percentile_box.valueChanged.connect(self.fail_percentile_changed)
-        self.det_model_yes.toggled.connect(self.det_model_enabled)
-        self.prob_model_yes.toggled.connect(self.prob_model_enabled)
+
+        # self.det_model_yes.toggled.connect(self.det_model_enabled)
+        # self.prob_model_yes.toggled.connect(self.prob_model_enabled)
+        self.det_model_yes.toggled.connect(self.model_state_enabled)
+        self.prob_model_yes.toggled.connect(self.model_state_enabled)
 
         # file dialog box
         self.file_browse_button.clicked.connect(self.shapefile_browse)
@@ -157,8 +224,20 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.actionOpen_json_file.triggered.connect(self.open_json_settings)
         self.actionSave_json_settings.triggered.connect(self.save_json_settings)
 
+        # Default Uncertainty mode (defaults to %) can be set to "percent" or "absolute"
+        self._default_uncertaintyMode = "%"
+        self.sv_unc_type_value = self._default_uncertaintyMode
+        self.shmax_unc_type_value = self._default_uncertaintyMode
+        self.shmin_unc_type_value = self._default_uncertaintyMode
+        self.az_unc_type_value = self._default_uncertaintyMode
+        self.az_unc_type2_value = self._default_uncertaintyMode
+        # self.inc_unc_type_value = self._default_uncertaintyMode
+        self.dip_unc_type_value = self._default_uncertaintyMode
+
+        # self.update_boxes()
+
     def init_stress(self):
-        rot_angle = self.model.inputs['shmaxaz']
+        rot_angle = self.model.input_model.ShMaxAz.mean
         fig = self.orient_canvas.fig
         # ax = fig.axes
         # fig.ax = self.orient_canvas.fig.axes
@@ -176,7 +255,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.show()
 
     def update_stress(self):
-        rot_angle = self.model.inputs['shmaxaz']
+        rot_angle = self.model.input_model.ShMaxAz.mean
         fig = self.orient_canvas.fig
         self.orient_canvas.fig.axes[0].cla()
         # ax = fig.axes
@@ -194,72 +273,232 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
 
     def depth_changed(self):
         self.model.inputs['depth'] = self.depth_mean_box.value()
+        self.model.update_input_model()
         # print(self.model.inputs['depth'])
 
+    def sv_mean_changed(self):
+        self.model.input_model.Sv.mean = self.sv_mean_box.value()
+        self.model.update_input_model()
+
+    def sv_std_changed(self):
+        self.model.inputs['sv_unc'] = self.sv_std_box.value()
+        # self.model.update_input_model()
+        if self.sv_unc_type_value == "%":
+            self.model.input_model.Sv.perc_100_to_perc(self.sv_std_box.value())
+        elif self.sv_unc_type_value == self.model.input_model.Sv.unit_name:
+            self.model.input_model.Sv.unit_to_perc(self.sv_std_box.value())
+
+    def sv_unc_type_changed(self):
+        switch_unc_type(self.sv_std_box, self.model.input_model.Sv, self.sv_mean_box, self.sv_unc_type.currentText())
+        # self.update_boxes()
+        self.sv_unc_type_value = self.sv_unc_type.currentText()
+        # if self.sv_unc_type.currentText() == "%":
+        #     self.sv_std_box.setValue(self.model.input_model.Sv.std_perc_100)
+        #     self.sv_std_box.setRange(0., 100.)
+        #     self.sv_std_box.setSingleStep(1.)
+        # else:
+        #     self.sv_std_box.setValue(self.model.input_model.Sv.std_unit())
+        #     self.sv_std_box.setRange(self.sv_mean_box.minimum(), self.sv_mean_box.maximum())
+        #     self.sv_std_box.setSingleStep(self.sv_mean_box.singleStep())
+
+    def stress_type_box_changed(self):
+        if self.stress_type_box.currentText() == "Reverse":
+            self.active_shmax = self.model.input_model.ShMaxR
+            self.active_shmin = self.model.input_model.ShMinR
+            self.active_stress = self.stress_type_box.currentText()
+            print(self.active_shmax.mean)
+
+        elif self.stress_type_box.currentText() == "Strike-Slip":
+            self.active_shmax = self.model.input_model.ShMaxSS
+            self.active_shmin = self.model.input_model.ShMinSS
+            self.active_stress = self.stress_type_box.currentText()
+            print(self.active_shmax.mean)
+
+        elif self.stress_type_box.currentText() == "Normal":
+            self.active_shmax = self.model.input_model.ShMaxSS
+            self.active_shmin = self.model.input_model.ShMinSS
+            self.active_stress = self.stress_type_box.currentText()
+            print(self.active_shmax.mean)
+
+        else:
+            warn = QMessageBox()
+            warn.setIcon(QMessageBox.Warning)
+            warn.setText("Stress State not resolved!")
+            warn.setTitle("Warning")
+            warn.exec_()
+        self.model.inputs['stress'] = self.active_stress
+
     def shmax_mean_changed(self):
+        self.active_shmax.mean = self.shmax_mean_box.value()
         self.model.inputs['shmax'] = self.shmax_mean_box.value()
+        # self.model.update_input_model()
 
     def shmax_std_changed(self):
         self.model.inputs['shMunc'] = self.shmax_std_box.value()
+        # self.model.update_input_model()
+        if self.shmax_unc_type_value == "%":
+            self.active_shmax.perc_100_to_perc(self.shmax_std_box.value())
+        else:
+            self.active_shmax.unit_to_perc(self.shmax_std_box.value())
+
+    def shmax_unc_type_changed(self):
+        # if self.shmax_unc_type.currentText() == "%":
+        #     self.shmax_std_box.setValue(self.active_shmax.std_perc_100())
+        #     self.shmax_std_box.setRange(0., 100.)
+        #     self.shmax_std_box.setSingleStep(1.)
+        # else:
+        #     self.shmax_std_box.setValue(self.active_shmax.std_unit())
+        #     self.shmax_std_box.setRange(self.shmax_mean_box.minimum(), self.shmax_mean_box.maximum())
+        #     self.shmax_std_box.setSingleStep(self.shmax_mean_box.singleStep())
+        switch_unc_type(self.shmax_std_box, self.active_shmax, self.shmax_mean_box, self.shmax_unc_type.currentText())
+        self.shmax_unc_type_value = self.shmax_unc_type.currentText()
 
     def shmin_mean_changed(self):
+        self.active_shmin.mean = self.shmin_mean_box.value()
         self.model.inputs['shmin'] = self.shmin_mean_box.value()
+        # self.model.update_input_model()
 
     def shmin_std_changed(self):
         self.model.inputs['shmiunc'] = self.shmin_std_box.value()
+        # self.model.update_input_model()
+        if self.shmin_unc_type_value == "%":
+            self.active_shmin.std_perc = self.shmin_std_box.value()
+        else:
+            self.active_shmin.std_perc = self.shmin_std_box.value() / self.shmin_mean_box.value()
 
-    def sv_mean_changed(self):
-        self.model.inputs['sv'] = self.sv_mean_box.value()
-
-    def sv_std_changed(self):
-        self.model.inputs['svunc'] = self.sv_std_box.value()
+    def shmin_unc_type_changed(self):
+        # if self.shmin_unc_type.currentText() == "%":
+        #     self.shmin_std_box.setValue(self.active_shmin.std_perc_100())
+        # else:
+        #     self.shmin_std_box.setValue(self.active_shmin.std_unit())
+        switch_unc_type(self.shmin_std_box, self.active_shmin, self.shmin_mean_box, self.shmin_unc_type.currentText())
+        self.shmin_unc_type_value = self.shmin_unc_type.currentText()
 
     def shmax_az_mean_changed(self):
+        self.model.input_model.ShMaxAz.mean = self.shmax_az_mean_box.value()
         self.model.inputs['shmaxaz'] = self.shmax_az_mean_box.value()
-        self.update_stress()
+        # self.update_stress()
 
     def shmin_az_mean_changed(self):
+        self.model.input_model.ShMinAz.mean = self.shmin_az_mean_box.value()
         self.model.inputs['shminaz'] = self.shmin_az_mean_box.value()
 
     def shmax_az_std_changed(self):
+        if self.az_unc_type_value == "%":
+            self.model.input_model.ShMaxAz.std_perc = self.shmax_az_std_box.value()
+        else:
+            self.model.input_model.ShMaxAz.std_perc = self.shmax_az_std_box.value() / self.shmax_az_mean_box.value()
         self.model.inputs['azunc'] = self.shmax_az_std_box.value()
         if self.shmin_az_std_box.value() != self.shmax_az_std_box.value():
             self.shmin_az_std_box.setValue(self.shmax_az_std_box.value())
 
+    def az_unc_type_changed(self):
+        # if self.az_unc_type.currentText() == "%":
+        #     self.shmax_std_box.setValue(self.model.input_model.ShMaxAz.std_perc)
+        # else:
+        #     self.shmax_std_box.setValue(self.model.input_model.ShMaxAz.std_unit())
+        switch_unc_type(self.shmax_az_std_box, self.model.input_model.ShMaxAz, self.shmax_az_mean_box,
+                        self.az_unc_type_value.currentText())
+        self.az_unc_type_value = self.az_unc_type.currentText()
+        if self.az_unc_type.currentText() != self.az_unc_type2.currentText():
+            self.az_unc_type2.setCurrentText(self.az_unc_type.currentText())
+
     def shmin_az_std_changed(self):
         self.model.inputs['azunc'] = self.shmin_az_std_box.value()
+        if self.az_unc_type_value == "%":
+            self.model.input_model.ShMinAz.std_perc = self.shmin_az_std_box.value()
+        else:
+            self.model.input_model.ShMinAz.std_perc = self.shmin_az_std_box.value() / self.shmin_az_mean_box.value()
         if self.shmin_az_std_box.value() != self.shmax_az_std_box.value():
             self.shmax_az_std_box.setValue(self.shmin_az_std_box.value())
+
+    def az_unc_type2_changed(self):
+        # if self.az_unc_type2.currentText() == "%":
+        #     self.shmin_std_box.set_value(self.model.input_model.ShMinAz.std_perc)
+        # else:
+        #     self.shmin_std_box.setValue(self.model.input_model.ShMinAz.std_unit())
+        switch_unc_type(self.shmin_az_std_box, self.model.input_model.ShMinAz, self.shmin_az_mean_box,
+                        self.az_unc_type2_value.currentText())
+        self.az_unc_type2_value = self.az_unc_type.currentText()
+        if self.az_unc_type2.currentText() != self.az_unc_type.currentText():
+            self.az_unc_type.setCurrentText(self.az_unc_type2.currentText())
 
     def sv_inc_unc_changed(self):
         self.model.inputs['inc_unc'] = self.sv_inc_unc_box.value()
 
     def dip_mean_changed(self):
+        self.model.input_model.Dip.mean = self.dip_mean_box.value()
         self.model.inputs['dip'] = self.dip_mean_box.value()
 
     def dip_std_changed(self):
+        if self.dip_unc_type_value == "%":
+            self.model.input_model.Dip.std_perc = self.dip_std_box.value()
+        else:
+            self.model.input_model.Dip.std_perc = self.dip_std_box.value() / self.dip_mean_box.value()
         self.model.inputs['dipunc'] = self.dip_std_box.value()
+
+    def dip_unc_type_changed(self):
+        # if self.dip_unc_type.currentText() == "%":
+        #     self.dip_std_box.setValue(self.model.input_model.Dip.std_perc)
+        # else:
+        #     self.dip_std_box.setValue(self.model.input_model.Dip.std_unit())
+        switch_unc_type(self.dip_std_box, self.model.input_model.Dip, self.dip_mean_box,
+                        self.dip_unc_type.currentText())
+        self.dip_unc_type_value = self.dip_unc_type.currentText()
 
     def mu_mean_changed(self):
         self.model.inputs['mu'] = self.mu_mean_box.value()
+        self.model.input_model.Mu.mean = self.mu_mean_box.value()
 
     def mu_std_changed(self):
         self.model.inputs['mu_unc'] = self.mu_std_box.value()
+        self.model.input_model.Mu.std_perc = self.mu_std_box.value()
 
     def max_pf_changed(self):
         self.model.inputs['pf'] = self.max_pf_box.value()
+        self.model.input_model.max_pf = self.max_pf_box.value()
+
+    def hydro_gradient_changed(self):
+        self.model.input_model.SHydro.mean = self.hydro_gradient_box.value()
+        self.model.inputs['hydro'] = self.hydro_gradient_box.value()
 
     def fail_percentile_changed(self):
         int_fail_perc = self.fail_percentile_box.value()
         self.model.inputs['fail_percent'] = int_fail_perc / 100.
+        self.model.failure_cutoff = int_fail_perc / 100.
+        if isinstance(self.model.outputs, data_model.Results2D):
+            self.make_plot()
 
-    def det_model_enabled(self):
-        self.model.inputs['flag'] = 'det'
-        self.prob_model_yes.setChecked(False)
+    # def det_model_enabled(self):
+    #     if self.det_model_yes.isChecked():
+    #         self.model.inputs['mode'] = 'det'
+    #         self.model.run_type = 'det'
+    #     # if self.prob_model_yes.isChecked():
+    #     #     self.prob_model_yes.setChecked(False)
+    #     print(self.model.inputs['mode'])
+    #     # print(self.model.run_type)
+    #
+    # def prob_model_enabled(self):
+    #     if self.prob_model_yes.isChecked():
+    #         self.model.inputs['mode'] = 'mc'
+    #         self.model.run_type = 'mc'
+    #     # if self.det_model_yes.isChecked():
+    #     #     self.det_model_yes.setChecked(False)
+    #     print(self.model.inputs['mode'])
+    #     # print(self.model.run_type)
 
-    def prob_model_enabled(self):
-        self.model.inputs['flag'] = 'mc'
-        self.det_model_yes.setChecked(False)
+    def model_state_enabled(self):
+        button = self.sender()
+        if button.text() == "Deterministic":
+            if button.isChecked():
+                self.model.inputs['mode'] = 'det'
+                self.model.run_type = 'det'
+                print(self.model.run_type)
+        if button.text() == "Probabilistic":
+            if button.isChecked():
+                self.model.inputs['mode'] = 'mc'
+                self.model.run_type = 'mc'
+                print(self.model.run_type)
 
     def shapefile_browse(self):
         dlg = QtWidgets.QFileDialog()
@@ -281,21 +520,24 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     def make_plot(self):
         # initialize model data
         outputs = self.model.outputs
-        inputs = self.model.inputs
+        input_parameters = self.model.inputs
+        model_input = self.model.input_model
+        out_features = self.model.outputs
         self.canvas.axes.clear()
         self.canvas.axcb.remove()
-        plot_bounds = outputs['bounds']
-        flag = inputs['flag']
-        out_features = outputs['results']
-        plotmin = outputs['plot_min']
-        plotmax = outputs['plot_max']
-        rot_angle = inputs['shmaxaz']
 
-        # condition data
-        xmin = plot_bounds[0]
-        xmax = plot_bounds[2]
-        ymin = plot_bounds[1]
-        ymax = plot_bounds[3]
+        xmin = out_features.xmin
+        xmax = out_features.xmax
+        ymin = out_features.ymin
+        ymax = out_features.ymax
+        plotmin = out_features.plotmin
+        plotmax = out_features.plotmax
+        cutoff = out_features.cutoff
+        flag = input_parameters['mode']
+        # xmin = plot_bounds[0]
+        # xmax = plot_bounds[2]
+        # ymin = plot_bounds[1]
+        # ymax = plot_bounds[3]
         # increase bounds by set percentage
         increase_scale = 0.25
         xrange = xmax - xmin
@@ -306,38 +548,50 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         xmax1 = xmax + xinc
         ymin1 = ymin - yinc
         ymax1 = ymax + yinc
+
         if flag == 'det':
             plotmin1 = plotmin - 0.01
             plotmax1 = plotmax + 0.01
             norm1 = mpl.colors.Normalize(vmin=plotmin1, vmax=plotmax1)
         elif flag == 'mc':
-            plotmin1 = plotmin - 5
-            plotmax1 = plotmax + 5
-            # plotmin1 = 35
-            # plotmax1 = 48
+            plotmin1 = plotmin - 1
+            plotmax1 = plotmax + 1
+            # plotmin1 = 0.
+            # plotmax1 = 5.
             norm1 = mpl.colors.Normalize(vmin=plotmin1, vmax=plotmax1)
+        else:
+            raise ValueError("Processing mode is not defined.")
         fig = self.canvas.fig
         ax = self.canvas.axes
         ax.set_xlim(xmin1, xmax1)
         ax.set_ylim(ymin1, ymax1)
-        for i in range(len(out_features)):
-            plot_data = np.array(out_features[i])
-            n_seg = int(plot_data[:, 0].max()) + 1
+        for line in out_features.lines:
+            # plot_data = np.array(out_features[i])
+            # segs = np.unique([obj.seg_id for obj in line])
+            n_seg = len(np.unique([obj.seg_id for obj in line]))
             segments = np.empty((n_seg, 2, 2))
             for j in range(n_seg):
-                points = np.reshape(plot_data[j, 1:5], (2, 2))
+                seg = line[j]
+                p1 = np.asarray(seg.p1)
+                p2 = np.asarray(seg.p2)
+                points = np.vstack([p1, p2])
+                # points = np.reshape(plot_data[j, 1:5], (2, 2))
                 segments[j] = points
             # x1 = plot_data[:, 1].T
             # y1 = plot_data[:, 2].T
             # points = np.array([x1, y1]).T.reshape(-1, 1, 2)
             # segments = np.concatenate([points[:-1], points[1:]], axis=1)
             if flag == 'det':
-                slip_tendency = plot_data[:, 5]
+                slip_tendency = [obj.result for obj in line]
+                # slip_tendency = plot_data[:, 5]
             elif flag == 'mc':
-                slip_tendency = plot_data[:, 5]
+                # slip_tendency = plot_data[:, 5]
+                slip_tendency = [obj.ecdf_cutoff(cutoff) for obj in line]
+            else:
+                raise ValueError("Processing mode is not defined.")
 
             lc = mpl.collections.LineCollection(segments, cmap=plt.get_cmap('jet_r'), norm=norm1)
-            lc.set_array(slip_tendency)
+            lc.set_array(np.array(slip_tendency))
             lc.set_linewidth(2)
             ax.add_collection(lc)
         self.canvas.axcb = fig.colorbar(lc)
@@ -349,33 +603,56 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.show()
 
     def execute_model(self):
-        inputs = self.model.inputs
-        infile = inputs['shapefile']
-        type_flag = inputs['flag']
-        results, bounds, plot_min, plot_max = faultslipMain.slip_tendency_2d(infile, inputs, type_flag)
-        self.model.outputs['results'] = results
-        self.model.outputs['bounds'] = bounds
-        self.model.outputs['plot_min'] = plot_min
-        self.model.outputs['plot_max'] = plot_max
+        input_model = self.model.input_model
+        model_params = self.model.inputs
+        infile = self.model.inputs['shapefile']
+        # type_flag = inputs['flag']
+        # model_params = {"depth": inputs['depth'], 'mode': type_flag, 'stress': self.active_stress,
+        #                 'fail_percent': self.model.inputs['fail_percent']}
+        results = faultslipMain.slip_tendency_2d(infile, input_model, model_params, dump_for_fsp=False)
+        self.model.outputs = results
         self.make_plot()
 
     def update_boxes(self):
         self.depth_mean_box.setValue(self.model.inputs['depth'])
-        self.shmax_mean_box.setValue(self.model.inputs['shmax'])
-        self.shmax_std_box.setValue(self.model.inputs['shMunc'])
-        self.shmin_mean_box.setValue(self.model.inputs['shmin'])
-        self.shmin_std_box.setValue(self.model.inputs['shmiunc'])
-        self.sv_mean_box.setValue(self.model.inputs['sv'])
-        self.sv_std_box.setValue(self.model.inputs['svunc'])
-        self.shmax_az_mean_box.setValue(self.model.inputs['shmaxaz'])
-        self.shmin_az_mean_box.setValue(self.model.inputs['shminaz'])
-        self.shmax_az_std_box.setValue(self.model.inputs['azunc'])
-        self.sv_inc_unc_box.setValue(self.model.inputs['inc_unc'])
-        self.dip_mean_box.setValue(self.model.inputs['dip'])
-        self.dip_std_box.setValue(self.model.inputs['dipunc'])
-        self.mu_mean_box.setValue(self.model.inputs['mu'])
-        self.mu_std_box.setValue(self.model.inputs['mu_unc'])
-        self.max_pf_box.setValue(self.model.inputs['pf'])
+
+        self.sv_mean_box.setValue(self.model.input_model.Sv.mean)
+        if self.sv_unc_type_value == "%":
+            self.sv_std_box.setValue(self.model.input_model.Sv.std_perc_100)
+        else:
+            self.sv_std_box.setValue(self.model.input_model.Sv.std_unit())
+
+        self.shmax_mean_box.setValue(self.active_shmax.mean)
+        if self.shmax_unc_type_value == "%":
+            self.shmax_std_box.setValue(self.active_shmax.std_perc_100)
+        else:
+            self.shmax_std_box.setValue(self.active_shmax.std_unit())
+
+        self.shmin_mean_box.setValue(self.active_shmin.mean)
+        if self.az_unc_type2_value == "%":
+            self.shmin_std_box.setValue(self.active_shmin.std_perc_100)
+        else:
+            self.shmin_std_box.setValue(self.active_shmin.std_unit())
+
+        self.shmax_az_mean_box.setValue(self.model.input_model.ShMaxAz.mean)
+        self.shmin_az_mean_box.setValue(self.model.input_model.ShMinAz.mean)
+        if self.az_unc_type_value == "%":
+            self.shmax_az_std_box.setValue(self.model.input_model.ShMaxAz.std_perc_100)
+        else:
+            self.shmax_az_std_box.setValue(self.model.input_model.ShMaxAz.std_unit())
+
+        # if self.inc_unc_type_value == "%":
+        #    self.sv_inc_unc_box.setValue(self.model.inputs['inc_unc'])
+
+        self.dip_mean_box.setValue(self.model.input_model.Dip.mean)
+        if self.dip_unc_type_value == "%":
+            self.dip_std_box.setValue(self.model.input_model.Dip.std_perc_100())
+        else:
+            self.dip_std_box.setValue(self.model.input_model.Dip.std_unit())
+        self.mu_mean_box.setValue(self.model.input_model.Mu.mean)
+        self.mu_std_box.setValue(self.model.input_model.Mu.std_perc)
+        self.max_pf_box.setValue(self.model.input_model.max_pf)
+        self.hydro_gradient_box.setValue(self.model.input_model.SHydro.mean)
         self.fail_percentile_box.setValue(self.model.inputs['fail_percent'])
         self.update_stress()
 
@@ -403,7 +680,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
 
     def plot_main(self):
         title = "placeholder"
-
 
 
 def main():

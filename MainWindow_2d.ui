@@ -109,6 +109,12 @@
                 <property name="decimals">
                  <number>0</number>
                 </property>
+                <property name="maximum">
+                 <double>98.000000000000000</double>
+                </property>
+                <property name="value">
+                 <double>5.000000000000000</double>
+                </property>
                </widget>
               </item>
              </layout>
@@ -156,7 +162,7 @@
                </widget>
               </item>
               <item>
-               <widget class="QComboBox" name="sv_error_unc_type">
+               <widget class="QComboBox" name="sv_unc_type">
                 <item>
                  <property name="text">
                   <string>%</string>
@@ -164,12 +170,38 @@
                 </item>
                 <item>
                  <property name="text">
-                  <string>MPa / km</string>
+                  <string>MPa/km</string>
                  </property>
                 </item>
                </widget>
               </item>
              </layout>
+            </item>
+            <item alignment="Qt::AlignHCenter">
+             <widget class="QLabel" name="label_23">
+              <property name="text">
+               <string>Stress Field Orientation</string>
+              </property>
+             </widget>
+            </item>
+            <item alignment="Qt::AlignHCenter">
+             <widget class="QComboBox" name="stress_type_box">
+              <item>
+               <property name="text">
+                <string>Reverse</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>Strike-Slip</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>Normal</string>
+               </property>
+              </item>
+             </widget>
             </item>
             <item alignment="Qt::AlignHCenter">
              <widget class="QLabel" name="label_3">
@@ -407,20 +439,6 @@
                 </property>
                </widget>
               </item>
-              <item alignment="Qt::AlignHCenter">
-               <widget class="QComboBox" name="inc_unc_type">
-                <item>
-                 <property name="text">
-                  <string>%</string>
-                 </property>
-                </item>
-                <item>
-                 <property name="text">
-                  <string>deg.</string>
-                 </property>
-                </item>
-               </widget>
-              </item>
              </layout>
             </item>
             <item alignment="Qt::AlignHCenter">
@@ -463,7 +481,7 @@
                </widget>
               </item>
               <item alignment="Qt::AlignHCenter">
-               <widget class="QComboBox" name="comboBox_2">
+               <widget class="QComboBox" name="dip_unc_type">
                 <item>
                  <property name="text">
                   <string>%</string>
@@ -548,7 +566,11 @@
              </widget>
             </item>
             <item alignment="Qt::AlignHCenter">
-             <widget class="QDoubleSpinBox" name="doubleSpinBox"/>
+             <widget class="QDoubleSpinBox" name="hydro_gradient_box">
+              <property name="value">
+               <double>10.000000000000000</double>
+              </property>
+             </widget>
             </item>
             <item alignment="Qt::AlignHCenter">
              <widget class="QLabel" name="label_21">
@@ -587,6 +609,9 @@
                   <property name="text">
                    <string>Deterministic</string>
                   </property>
+                  <attribute name="buttonGroup">
+                   <string notr="true">ModelButtonGroup</string>
+                  </attribute>
                  </widget>
                 </item>
                 <item>
@@ -597,6 +622,9 @@
                   <property name="checked">
                    <bool>true</bool>
                   </property>
+                  <attribute name="buttonGroup">
+                   <string notr="true">ModelButtonGroup</string>
+                  </attribute>
                  </widget>
                 </item>
                </layout>
@@ -704,13 +732,6 @@
               </property>
              </widget>
             </item>
-            <item>
-             <widget class="QProgressBar" name="progressBar">
-              <property name="value">
-               <number>24</number>
-              </property>
-             </widget>
-            </item>
            </layout>
           </item>
           <item>
@@ -782,4 +803,7 @@
  </widget>
  <resources/>
  <connections/>
+ <buttongroups>
+  <buttongroup name="ModelButtonGroup"/>
+ </buttongroups>
 </ui>
