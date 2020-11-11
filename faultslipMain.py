@@ -1065,12 +1065,11 @@ def main(infile, params, model_params, dim='2d'):
         raise(TypeError, "no defined type")
 
 
-
-if __name__ == '__main__':
-    test_params = {'depth': 2.5, 'mode': 'mc', 'stress': 'strike-slip', 'fail_percent': 0.5}
-    in_file = 'test.json'
-    with open(in_file) as json_file:
-        j_data = json.load(json_file)
-    inParams_test = j_data['input_data'][0]
-    inFile_test = j_data['input_file']
-    main(inFile_test, inParams_test, test_params)
+# if __name__ == '__main__':
+#     test_params = {'depth': 2.5, 'mode': 'mc', 'stress': 'strike-slip', 'fail_percent': 0.5}
+#     in_file = 'testdata/test.json'
+#     with open(in_file) as json_file:
+#         j_data = json.load(json_file)
+#     inParams_test = j_data['input_data'][0]
+#     inFile_test = j_data['input_file']
+#     main(inFile_test, inParams_test, test_params)
