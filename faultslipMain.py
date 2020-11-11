@@ -127,7 +127,7 @@ def tsurf_read(infile):
 
 def lineament_from_mesh(in_meshes, depth, outfile, epsg):
     """
-
+    Generate a lineament
     Parameters
     ----------
     epsg
