@@ -17,6 +17,8 @@ pyFaultSlip depends on the following:
 ## Usage
 pyFaultSlip works as both a command-line function / module and as a GUI interface (currently only implemented for 2D lineaments). 
 
+Input settings and parameters are input as JSON files. FaultSlipMain.main() is a helper function to condition JSON data to input data classes. 
+
 Documentation forthcoming. 
 
 ## Acknowledgements 
