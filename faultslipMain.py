@@ -311,7 +311,8 @@ def define_principal_stresses(sv1, depth, shmin1, shmax1, hminaz, hmaxaz, sv_unc
     if round(abs(hmaxaz - hminaz), 0) != 90.:
         raise ValueError('hmin and hmax are not orthogonal')
     # TODO: Truly fix azimuth issue with stress. Currently add 90 degrees to max stress direction.
-    hmaxaz = math.radians(hmaxaz) + (math.pi/2)
+    # hmaxaz = math.radians(hmaxaz) + (math.pi/2)
+    hmaxaz = math.radians(hmaxaz)
 
     if is_3d:
         sv1 = sv1 / depth
@@ -388,7 +389,7 @@ def rotate_plane_stress(sigma_1_ax, plane_norm, princ_stress_tensor):
     rot_axis = np.cross(plane_norm, sigma_1_ax)
     rot_angle = -1 * np.dot(plane_norm, sigma_1_ax)
     rotmatrix = rot_matrix_axis_angle(rot_axis, rot_angle)
-    plane_stress_tensor = rotmatrix.T @ princ_stress_tensor @ rotmatrix
+    plane_stress_tensor = rotmatrix @ princ_stress_tensor @ rotmatrix.T
     return plane_stress_tensor
 
 

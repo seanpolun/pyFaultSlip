@@ -302,6 +302,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         #     self.sv_std_box.setSingleStep(self.sv_mean_box.singleStep())
 
     def stress_type_box_changed(self):
+        # TODO: Fix odd behavior with the stress type 2D GUI box currently crashing with normal stress
         if self.stress_type_box.currentText() == "Reverse":
             self.active_shmax = self.model.input_model.ShMaxR
             self.active_shmin = self.model.input_model.ShMinR
@@ -618,26 +619,26 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
 
         self.sv_mean_box.setValue(self.model.input_model.Sv.mean)
         if self.sv_unc_type_value == "%":
-            self.sv_std_box.setValue(self.model.input_model.Sv.std_perc_100)
+            self.sv_std_box.setValue(self.model.input_model.Sv.std_perc_100())
         else:
             self.sv_std_box.setValue(self.model.input_model.Sv.std_unit())
 
         self.shmax_mean_box.setValue(self.active_shmax.mean)
         if self.shmax_unc_type_value == "%":
-            self.shmax_std_box.setValue(self.active_shmax.std_perc_100)
+            self.shmax_std_box.setValue(self.active_shmax.std_perc_100())
         else:
             self.shmax_std_box.setValue(self.active_shmax.std_unit())
 
         self.shmin_mean_box.setValue(self.active_shmin.mean)
         if self.az_unc_type2_value == "%":
-            self.shmin_std_box.setValue(self.active_shmin.std_perc_100)
+            self.shmin_std_box.setValue(self.active_shmin.std_perc_100())
         else:
             self.shmin_std_box.setValue(self.active_shmin.std_unit())
 
         self.shmax_az_mean_box.setValue(self.model.input_model.ShMaxAz.mean)
         self.shmin_az_mean_box.setValue(self.model.input_model.ShMinAz.mean)
         if self.az_unc_type_value == "%":
-            self.shmax_az_std_box.setValue(self.model.input_model.ShMaxAz.std_perc_100)
+            self.shmax_az_std_box.setValue(self.model.input_model.ShMaxAz.std_perc_100())
         else:
             self.shmax_az_std_box.setValue(self.model.input_model.ShMaxAz.std_unit())
 
