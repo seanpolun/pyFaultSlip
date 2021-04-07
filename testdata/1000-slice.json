@@ -1,0 +1,30 @@
+{
+    "input_data": [
+        {
+            "azunc": 4.0,
+            "datum": 1160,
+            "depth": 5.0,
+            "dip": 90,
+            "dipunc": 15.0,
+            "fail_percent": 0.05,
+            "flag": "mc",
+            "hydro": 9.0,
+            "inc_unc": 10,
+            "mode": "mc",
+            "mu": 0.7,
+            "mu_unc": 0.15,
+            "pf": 50.0,
+            "pfunc": 15.0,
+            "shMunc": 15.0,
+            "shapefile": "D:/CarbonSAFE_PhaseII/3D-fault-meshes/lineaments-1000-utm.shp",
+            "shmax": 32.0,
+            "shmaxaz": 75.0,
+            "shmin": 19.0,
+            "shminaz": 165.0,
+            "shmiunc": 15.0,
+            "sv": 130.0,
+            "sv_unc": 15.0,
+            "svunc": 25.0
+        }
+    ]
+}

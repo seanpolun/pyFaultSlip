@@ -21,12 +21,9 @@
 # SOFTWARE.
 
 
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtWidgets import QMessageBox
-from PyQt5.QtCore import Qt
 import sys
-from MainWindow_2d import Ui_MainWindow
-import faultslipMain
 import json
 import numpy as np
 import matplotlib as mpl
@@ -34,7 +31,10 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
-import data_model
+import py_fault_slip
+import py_fault_slip.data_model as data_model
+from py_fault_slip.MainWindow_2d import Ui_MainWindow
+
 mpl.use('Qt5Agg')
 
 
@@ -610,7 +610,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # type_flag = inputs['flag']
         # model_params = {"depth": inputs['depth'], 'mode': type_flag, 'stress': self.active_stress,
         #                 'fail_percent': self.model.inputs['fail_percent']}
-        results = faultslipMain.slip_tendency_2d(infile, input_model, model_params, dump_for_fsp=False)
+        results = py_fault_slip.slip_tendency_2d(infile, input_model, model_params, dump_for_fsp=False)
         self.model.outputs = results
         self.make_plot()
 

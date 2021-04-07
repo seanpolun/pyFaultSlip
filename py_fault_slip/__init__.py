@@ -29,13 +29,15 @@ import matplotlib.pyplot as plt
 import geopandas as gp
 import numba
 from shapely.geometry import LineString
-import json
 import meshio
 import warnings
 import datetime
 import trimesh
 import csv
-import data_model
+import py_fault_slip.data_model as data_model
+
+from tqdm.auto import tqdm
+
 nsims = 10000
 
 
@@ -148,7 +150,7 @@ def lineament_from_mesh(in_meshes, depth, outfile, epsg):
         mesh = trimesh.load_mesh(mesh_path)
         line = trimesh.intersections.mesh_plane(mesh, [0, 0, 1], [0, 0, depth])
         line_dim = line.shape
-        line_flat = line.reshape(line_dim[0]*line_dim[1], line_dim[2])
+        line_flat = line.reshape(line_dim[0] * line_dim[1], line_dim[2])
         line_flat_unq = np.unique(line_flat, axis=0)
         line_geom = LineString(line_flat_unq[:, 0:2])
         name_list.append(out_lin_name)
@@ -156,7 +158,6 @@ def lineament_from_mesh(in_meshes, depth, outfile, epsg):
     geom_dict = {'Name': name_list, 'geometry': lin_list}
     out_gdf = gp.GeoDataFrame(geom_dict, crs=epsg)
     out_gdf.to_file(filename=outfile, driver='ESRI Shapefile')
-
 
 
 @numba.njit()
@@ -184,11 +185,11 @@ def calc_normal_points(p0, p1, p2):
     x0, y0, z0 = p0
     x1, y1, z1 = p1
     x2, y2, z2 = p2
-    u = [x1-x0, y1-y0, z1-z0]
-    v = [x2-x0, y2-y0, z2-z0]
-    cx = (x0 + x1 + x2)/3
-    cy = (y0 + y1 + y2)/3
-    cz = (z0 + z1 + z2)/3
+    u = [x1 - x0, y1 - y0, z1 - z0]
+    v = [x2 - x0, y2 - y0, z2 - z0]
+    cx = (x0 + x1 + x2) / 3
+    cy = (y0 + y1 + y2) / 3
+    cz = (z0 + z1 + z2) / 3
     midpoint = np.array([cx, cy, cz])
     normal = np.cross(u, v)
     return normal, midpoint
@@ -341,13 +342,15 @@ def define_principal_stresses(sv1, depth, shmin1, shmax1, hminaz, hmaxaz, sv_unc
             if shmax1 > sv1 > shmin1:
                 sigma2 = sv
                 sigma3 = shmin
-                rotated_axis = np.asarray([math.sin(az_rad) * math.cos(az_dip_rad), math.cos(az_rad) * math.cos(az_dip_rad),
-                                           math.sin(az_dip_rad)])
+                rotated_axis = np.asarray(
+                    [math.sin(az_rad) * math.cos(az_dip_rad), math.cos(az_rad) * math.cos(az_dip_rad),
+                     math.sin(az_dip_rad)])
             elif shmax1 > shmin1 > sv1:
                 sigma2 = shmin
                 sigma3 = sv
-                rotated_axis = np.asarray([math.sin(az_rad) * math.cos(az_dip_rad), math.cos(az_rad) * math.cos(az_dip_rad),
-                                           math.sin(az_dip_rad)])
+                rotated_axis = np.asarray(
+                    [math.sin(az_rad) * math.cos(az_dip_rad), math.cos(az_rad) * math.cos(az_dip_rad),
+                     math.sin(az_dip_rad)])
             else:
                 raise ValueError('Unable to resolve principal stress orientations')
         axis_out[i, :] = rotated_axis
@@ -568,7 +571,10 @@ def monte_carlo_slip_tendency(pole, pole_unc, stress_tensor, stress_unc, axis, a
     """
 
     # n_sims = 10000
-    pf_range = 25.
+    # pf_range = 25.
+    # TODO: Parametrize this
+    lower_pf = -0.2
+    upper_pf = 5.9
     # initialize uncertainty bounds
     princ_stress_vec = np.array([stress_tensor[0, 0], stress_tensor[1, 1], stress_tensor[2, 2]])
     princ_stress_unc = np.array([stress_unc[0, 0], stress_unc[1, 1], stress_unc[2, 2]])
@@ -588,12 +594,20 @@ def monte_carlo_slip_tendency(pole, pole_unc, stress_tensor, stress_unc, axis, a
         axis_rand = np.random.randn(3)
         axis1 = (axis_unc * axis_rand) + axis
         axis1 = axis1 / np.linalg.norm(axis1)
-        pf1 = np.random.random() * (pf + pf_range)
+        # pf1 = np.random.random() * (pf + pf_range)
+        hydro1 = pf - lower_pf
+        hydro2 = pf + upper_pf
+        pf1 = (hydro2 - hydro1) * np.random.random() + hydro1
         mu1 = (np.random.randn() * mu_unc) + mu
 
-        plane_stress = rotate_plane_stress(axis1, pole1, stress1)
-        sigma_n = plane_stress[0, 0]
-        sigma_t = plane_stress[2, 0]
+        # plane_stress = rotate_plane_stress(axis1, pole1, stress1)
+        # Leave this in for SHAME
+        # sigma_n = plane_stress[0, 0]
+        # sigma_t = plane_stress[2, 0]
+        sigma_n_vec = np.dot(stress1, pole1)
+        sigma_n = np.sqrt(sigma_n_vec.dot(sigma_n_vec))
+        sigma_t_mat = np.sqrt((stress1 @ stress1) - (sigma_n ** 2))
+        sigma_t = np.nansum(sigma_t_mat[:])
         # slip_tendency = sigma_t / sigma_n
         sigma_n_eff = sigma_n - pf1
         slip_tendency_eff = sigma_t / sigma_n_eff
@@ -636,15 +650,16 @@ def slip_tendency_2d(infile, input_model, input_params, dump_for_fsp=False):
     # min_node_distance = 150  # 50 m
     dip = input_model.Dip
     sv = input_model.Sv
+    stress = stress.lower()
     print(stress)
 
-    if stress == "Reverse":
+    if stress == "reverse":
         shmax = input_model.ShMaxR
         shmin = input_model.ShMinR
-    elif stress == "Normal":
+    elif stress == "normal":
         shmax = input_model.ShMaxN
         shmin = input_model.ShMinN
-    elif stress == "Strike-Slip":
+    elif stress == "strike-slip":
         shmax = input_model.ShMaxSS
         shmin = input_model.ShMinSS
     else:
@@ -672,21 +687,26 @@ def slip_tendency_2d(infile, input_model, input_params, dump_for_fsp=False):
 
     if mode == 'mc':
         stress_tensor, sigma1_ax, stress_unc, sig_1_std, _n = define_principal_stresses(sv.mean, depth, shmin.mean,
-                                                                                    shmax.mean, shminaz.mean,
-                                                                                    shmaxaz.mean, sv_unc=sv.std_unit(),
-                                                                                    shmin_unc=shmin.std_unit(),
-                                                                                    shmax_unc=shmax.std_unit(),
-                                                                                    v_tilt_unc=10,
-                                                                                    h_az_unc=shmaxaz.std_unit(),
-                                                                                    is_3d=False)
+                                                                                        shmax.mean, shminaz.mean,
+                                                                                        shmaxaz.mean,
+                                                                                        sv_unc=sv.std_unit(),
+                                                                                        shmin_unc=shmin.std_unit(),
+                                                                                        shmax_unc=shmax.std_unit(),
+                                                                                        v_tilt_unc=10,
+                                                                                        h_az_unc=shmaxaz.std_unit(),
+                                                                                        is_3d=False)
 
     elif mode == 'det':
         stress_tensor, sigma1_ax, stress_unc, sig_1_std, _n = define_principal_stresses(sv.mean, depth, shmin.mean,
-                                                                                    shmax.mean, shminaz.mean,
-                                                                                    shmaxaz.mean)
+                                                                                        shmax.mean, shminaz.mean,
+                                                                                        shmaxaz.mean)
 
     else:
         raise ValueError('No recognized processing mode [''mc'' or ''det'']')
+    # Stress tensor needs to be changed from gradient to value at depth
+    stress_tensor = stress_tensor * depth
+    stress_unc = stress_unc * depth
+
     lineaments = gp.GeoSeries.from_file(infile)
     bounds1 = lineaments.total_bounds
     #    lin_crs = lineaments.crs
@@ -696,7 +716,7 @@ def slip_tendency_2d(infile, input_model, input_params, dump_for_fsp=False):
         fsp_dump = []
         dump_dip = 90.
         csv_file = input_params['dump_file']
-    for i in range(num_features):
+    for i in tqdm(range(num_features)):
         work_feat = lineaments[i]
         # work_feat_interp = redistribute_vertices(work_feat, min_node_distance)
         # work_feat_inter_coords = work_feat_interp.coords
@@ -722,7 +742,7 @@ def slip_tendency_2d(infile, input_model, input_params, dump_for_fsp=False):
             dip_rad = math.radians(dip.mean)
             if dump_for_fsp:
                 point_diff = (point1[0] - point2[0], point1[1] - point2[1])
-                seg_len = math.sqrt(point_diff[0]**2 + point_diff[1]**2) / 1000.
+                seg_len = math.sqrt(point_diff[0] ** 2 + point_diff[1] ** 2) / 1000.
                 strike = math.degrees(azimuth)
                 x_dump = point1[0] / 1000
                 y_dump = point1[1] / 1000
@@ -734,7 +754,8 @@ def slip_tendency_2d(infile, input_model, input_params, dump_for_fsp=False):
                 fault_plane_pole = fault_plane.pole
                 slip_tend, fail_pressure = deterministic_slip_tend(fault_plane_pole, stress_tensor, sigma1_ax,
                                                                    input_model.max_pf, input_model.Mu.mean)
-                result = data_model.SegmentDet2dResult(work_feat_coords[j][0], work_feat_coords[j][1], work_feat_coords[j + 1][0],
+                result = data_model.SegmentDet2dResult(work_feat_coords[j][0], work_feat_coords[j][1],
+                                                       work_feat_coords[j + 1][0],
                                                        work_feat_coords[j + 1][1], slip_tend, metadata)
             elif mode == 'mc':
                 dip_unc = dip.std_unit()
@@ -744,22 +765,24 @@ def slip_tendency_2d(infile, input_model, input_params, dump_for_fsp=False):
                 st_out = monte_carlo_slip_tendency(fault_plane_pole, fault_plane_unc, stress_tensor, stress_unc,
                                                    sigma1_ax, sig_1_std, input_model.max_pf, input_model.Mu.mean,
                                                    input_model.Mu.std_perc)
-                pf_out = st_out[:, 0]
-                #true_data = pf_out[st_out[:, 2] > st_out[:, 1]]
-                #tend_out = ecdf(true_data)
-                #tend_out[:, 0] = tend_out[:, 0] - hydrostatic_pres
-                #ind_fail = (np.abs(tend_out[:, 1] - fail_threshold)).argmin()
-                #outrow = [j, work_feat_coords[j][0], work_feat_coords[j][1], work_feat_coords[j + 1][0],
+                # pf_out = st_out[:, 0]
+                # st_out[:, 0] = st_out[:, 0] - hydrostatic_pres
+
+                # true_data = pf_out[st_out[:, 2] > st_out[:, 1]]
+                # tend_out = ecdf(true_data)
+                # tend_out[:, 0] = tend_out[:, 0] - hydrostatic_pres
+                # ind_fail = (np.abs(tend_out[:, 1] - fail_threshold)).argmin()
+                # outrow = [j, work_feat_coords[j][0], work_feat_coords[j][1], work_feat_coords[j + 1][0],
                 #          work_feat_coords[j + 1][1], tend_out[ind_fail, 0]]
                 result = data_model.SegmentMC2dResult(work_feat_coords[j][0], work_feat_coords[j][1],
-                                           work_feat_coords[j + 1][0], work_feat_coords[j + 1][1],
-                                           pf_out - hydrostatic_pres, metadata)
+                                                      work_feat_coords[j + 1][0], work_feat_coords[j + 1][1],
+                                                      st_out, metadata)
             else:
                 raise ValueError('Cannot resolve calculation mode / not implemented yet')
             # flat_out_features.append()
             # fault_out_arr.append(outrow)
             out_features_list.append(result)
-        print(["Finished object# ", str(i + 1)])
+        # print(["Finished object# ", str(i + 1)])
     out_features = data_model.Results2D(out_features_list, cutoff=fail_threshold)
     # flat_out_features = np.array(flat_out_features)
     # plotmin = np.min(flat_out_features[:, 5])
@@ -1054,16 +1077,122 @@ def plot_all(out_features, model_input, input_parameters):
     plt.show()
 
 
-def main(infile, params, model_params, dim='2d'):
-    if dim == '2d':
-        inputs = data_model.ModelInputs(params)
-        results = slip_tendency_2d(infile, inputs, model_params, dump_for_fsp=False)
-        plot_all(results, inputs, model_params)
-    elif dim == '3d':
-        inputs = data_model.ModelInputs(params)
-        slip_tendency_3d(infile, params, model_params)
+def plot_like_fsp(out_features, model_input, input_parameters):
+    xmin = out_features.xmin
+    xmax = out_features.xmax
+    ymin = out_features.ymin
+    ymax = out_features.ymax
+    cutoff = 2.  # 2 MPa (this is hardcoded because FSP does it that way)
+    # plotmin = out_features.plotmin
+    # plotmax = out_features.plotmax
+    # cutoff = out_features.cutoff
+    flag = input_parameters['mode']
+    # xmin = plot_bounds[0]
+    # xmax = plot_bounds[2]
+    # ymin = plot_bounds[1]
+    # ymax = plot_bounds[3]
+    # increase bounds by set percentage
+    increase_scale = 0.25
+    xrange = xmax - xmin
+    yrange = ymax - ymin
+    xinc = (xrange * increase_scale) / 2
+    yinc = (yrange * increase_scale) / 2
+    xmin1 = xmin - xinc
+    xmax1 = xmax + xinc
+    ymin1 = ymin - yinc
+    ymax1 = ymax + yinc
+
+    # For comparisons with FSP, MUST be in the 'mc' mode
+    if flag == 'det':
+        raise ValueError("When plotting comparisons to FSP, pyFS must be in 'mc' mode.")
     else:
-        raise(TypeError, "no defined type")
+        # plotmin1 = plotmin - 1
+        # plotmax1 = plotmax + 1
+        # plotmin1 = 0.
+        # plotmax1 = 5.
+        plotmin1 = 0.01
+        plotmax1 = 0.33
+        colors1 = ['lime', 'gold', 'darkorange', 'red']
+        bounds = [0.0, 0.01, 0.17, 0.33, 1.0]
+        norm1 = mpl.colors.BoundaryNorm(boundaries=bounds, ncolors=4)
+        cmap1 = mpl.colors.ListedColormap(colors=colors1, name="Stoplight")
+
+    # if flag == 'det':
+    #     plotmin1 = plotmin - 0.01
+    #     plotmax1 = plotmax + 0.01
+    #     norm1 = mpl.colors.Normalize(vmin=plotmin1, vmax=plotmax1)
+    # elif flag == 'mc':
+    #     plotmin1 = plotmin - 1
+    #     plotmax1 = plotmax + 1
+    #     # plotmin1 = 0.
+    #     # plotmax1 = 5.
+    #     norm1 = mpl.colors.Normalize(vmin=plotmin1, vmax=plotmax1)
+    # else:
+    #     raise ValueError("Processing mode is not defined.")
+
+    fig, ax = plt.subplots(dpi=300)
+    # fig.set_size_inches(6, 4)
+    ax.set_xlim(xmin1, xmax1)
+    ax.set_ylim(ymin1, ymax1)
+    for line in out_features.lines:
+        # plot_data = np.array(out_features[i])
+        # segs = np.unique([obj.seg_id for obj in line])
+        n_seg = len(np.unique([obj.seg_id for obj in line]))
+        segments = np.empty((n_seg, 2, 2))
+        for j in range(n_seg):
+            seg = line[j]
+            p1 = np.asarray(seg.p1)
+            p2 = np.asarray(seg.p2)
+            points = np.vstack([p1, p2])
+            # points = np.reshape(plot_data[j, 1:5], (2, 2))
+            segments[j] = points
+        # x1 = plot_data[:, 1].T
+        # y1 = plot_data[:, 2].T
+        # points = np.array([x1, y1]).T.reshape(-1, 1, 2)
+        # segments = np.concatenate([points[:-1], points[1:]], axis=1)
+        if flag == 'det':
+            raise ValueError("Needs to be in MC processing mode.")
+            # slip_tendency = plot_data[:, 5]
+        elif flag == 'mc':
+            # slip_tendency = plot_data[:, 5]
+            # slip_tendency = [obj.ecdf_cutoff(cutoff) for obj in line]
+            slip_tendency = [obj.pressure_cutoff(cutoff) for obj in line]
+            # print(slip_tendency)
+        else:
+            raise ValueError("Processing mode is not defined.")
+
+        lc = mpl.collections.LineCollection(segments, cmap=cmap1, norm=norm1)
+        lc.set_array(np.array(slip_tendency))
+        lc.set_linewidth(2)
+        ax.add_collection(lc)
+    axcb = fig.colorbar(lc)
+    if flag == 'det':
+        axcb.set_label('Slip Tendency')
+    elif flag == 'mc':
+        axcb.set_label('Failure Probability')
+    ax2 = fig.add_axes([0.15, 0.1, 0.2, 0.2])
+    # TODO: fix this to use a proper path
+    str_img = plt.imread('../resources/h_stresses.png')
+    stress_im = ax2.imshow(str_img)
+    midx = str_img.shape[0] / 2
+    midy = str_img.shape[1] / 2
+    transf = mpl.transforms.Affine2D().rotate_deg_around(midx, midy, model_input.ShMaxAz.mean) + ax2.transData
+    stress_im.set_transform(transf)
+    ax2.set_xticks([])
+    ax2.set_yticks([])
+    ax2.set(frame_on=False)
+    plt.show()
+
+# def main(infile, params, model_params, dim='2d'):
+#     if dim == '2d':
+#         inputs = data_model.ModelInputs(params)
+#         results = slip_tendency_2d(infile, inputs, model_params, dump_for_fsp=False)
+#         plot_all(results, inputs, model_params)
+#     elif dim == '3d':
+#         inputs = data_model.ModelInputs(params)
+#         slip_tendency_3d(infile, params, model_params)
+#     else:
+#         raise(TypeError, "no defined type")
 
 
 # if __name__ == '__main__':

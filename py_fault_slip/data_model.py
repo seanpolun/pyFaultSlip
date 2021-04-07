@@ -2,6 +2,10 @@ import dataclasses
 import math
 import json
 import numpy as np
+import os
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import warnings
 
 
 @dataclasses.dataclass
@@ -28,7 +32,10 @@ class UncClass:
 
 class ModelDefaults:
     def __init__(self):
-        infile = "./defaults.json"
+        file_root = os.path.dirname(os.path.abspath(__file__))
+        # print(file_root)
+        defaults_file = "defaults.json"
+        infile = os.path.join(file_root, defaults_file)
         with open(infile) as load_file:
             j_data = json.load(load_file)
         inputs = j_data['input_data'][0]
@@ -92,7 +99,11 @@ class ModelInputs:
         if "s_hydro" in input_dict.values():
             self.SHydro = UncClass(input_dict["s_hydro"], defaults.stress_unit)
         else:
-            self.SHydro = UncClass(defaults.hydro, defaults.stress_unit)
+            if "pf_max" in input_dict.values():
+                new_hydro = input_dict["pf_max"] / input_dict["depth"]
+                self.SHydro = UncClass(new_hydro, defaults.stress_unit)
+            else:
+                self.SHydro = UncClass(defaults.hydro, defaults.stress_unit)
         if "mu" in input_dict.values():
             if "mu_unc" in input_dict.values():
                 self.Mu = UncClass(input_dict["mu"], input_dict["mu_unc"])
@@ -152,6 +163,58 @@ class ModelInputs:
                 self.ShMinAz = UncClass(self.ShMaxAz.mean + 90., defaults.az_unit, defaults.az_unc_perc)
             else:
                 self.ShMinAz = UncClass(defaults.sh_min_az, defaults.az_unit, defaults.az_unc_perc)
+
+    def plot_uncertainty(self, stress, depth):
+        fig, axs = plt.subplots(2, 4, sharex='none', sharey='all')
+        n_samples = 1000
+        dip = np.random.normal(self.Dip.mean, self.Dip.std_unit(), n_samples)
+        mu = np.random.normal(self.Mu.mean, self.Mu.std_perc, n_samples)
+        s_v = np.random.normal(self.Sv.mean, self.Sv.std_unit(), n_samples)
+        # s_hydro = np.random.normal(self.SHydro.mean, self.SHydro.std_unit(), 500)
+        lower_pf = -0.04
+        upper_pf = 1.18
+        hydro1 = self.SHydro.mean - lower_pf
+        hydro2 = self.SHydro.mean + upper_pf
+        s_hydro = (hydro2 - hydro1) * np.random.random(n_samples) + hydro1
+        if stress == "reverse":
+            sh_max = np.random.normal(self.ShMaxR.mean, self.ShMaxR.std_unit(), n_samples)
+            sh_min = np.random.normal(self.ShMinR.mean, self.ShMinR.std_unit(), n_samples)
+        elif stress == "strike-slip":
+            sh_max = np.random.normal(self.ShMaxSS.mean, self.ShMaxSS.std_unit(), n_samples)
+            sh_min = np.random.normal(self.ShMinSS.mean, self.ShMinSS.std_unit(), n_samples)
+        elif stress == "normal":
+            sh_max = np.random.normal(self.ShMaxN.mean, self.ShMaxN.std_unit(), n_samples)
+            sh_min = np.random.normal(self.ShMinN.mean, self.ShMinN.std_unit(), n_samples)
+        else:
+            sh_max = np.random.normal(0, 1, n_samples)
+            sh_min = np.random.normal(0, 1, n_samples)
+            warnings.warn("Stress field not properly defined.", UserWarning)
+        shmax_az = np.random.normal(self.ShMaxAz.mean, self.ShMaxAz.std_unit(), n_samples)
+        shmin_az = np.random.normal(self.ShMinAz.mean, self.ShMinAz.std_unit(), n_samples)
+
+        s_v = s_v * depth
+        s_hydro = s_hydro * depth
+        sh_max = sh_max * depth
+        sh_min = sh_min * depth
+
+        plot_datas = [dip, mu, s_v, s_hydro, sh_max, sh_min, shmax_az, shmin_az]
+        titles = ["Dip", "Mu", "Vert. Stress [MPa]", "Hydro. Pres. [MPa]", "SHMax [MPa]", "Shmin [MPa]",
+                  "Shmax Azimuth", "Shmin Azimuth"]
+        i = 0
+        for ax1 in axs:
+            for ax in ax1:
+                data = plot_datas[i]
+                ax.hist(data, 50)
+                ax.axvline(np.median(data), color="black")
+                ax.set_title(titles[i])
+                quantiles = np.quantile(data, [0.01, 0.5, 0.99])
+                if titles[i] == "Mu":
+                    quantiles = np.around(quantiles, decimals=2)
+                else:
+                    quantiles = np.around(quantiles, decimals=0)
+                ax.set_xticks(quantiles)
+                i = i + 1
+        fig.tight_layout()
 
 
 class SegmentDet2dResult:
@@ -230,14 +293,20 @@ class SegmentMC2dResult:
         if "seg_id" in metadata:
             self.seg_id = metadata["seg_id"]
 
-        if pf_results.size == 0:
+        pf1 = pf_results[:, 0]
+        mu1 = pf_results[:, 1]
+        slip_tend = pf_results[:, 2]
+        inds = slip_tend > mu1
+        n1 = pf1.size
+        pf2 = pf1[inds]
+        if pf2.size == 0:
             x = np.array([0., 0., 0.])
             y = np.array([0., 0.5, 1.])
             self.ecdf = np.column_stack((x, y))
-        pf_results.sort()
-        n = pf_results.size
-        y = np.linspace(1.0 / n, 1, n)
-        self.ecdf = np.column_stack((pf_results, y))
+        pf2.sort()
+        n2 = pf2.size
+        y = np.linspace(1.0 / n1, 1, n2)
+        self.ecdf = np.column_stack((pf2, y))
 
     def ecdf_cutoff(self, cutoff):
         """
@@ -254,6 +323,27 @@ class SegmentMC2dResult:
         ind_fail = (np.abs(self.ecdf[:, 1] - cutoff)).argmin()
         fail_pressure = self.ecdf[ind_fail, 0]
         return fail_pressure
+
+    def pressure_cutoff(self, cutoff):
+        """
+
+        Parameters
+        ----------
+        cutoff: float
+
+        Returns
+        -------
+
+        """
+        ind_fail = (np.abs(self.ecdf[:, 0] - cutoff)).argmin()
+        fail_prob = self.ecdf[ind_fail, 1]
+        return fail_prob
+
+    def plot_ecdf(self, pressure):
+        fig, ax = plt.subplots()
+
+        out_ecdf = self.ecdf
+        ax.plot(out_ecdf[:, 0], out_ecdf[:, 1], 'k-')
 
 
 class Results2D:
@@ -301,7 +391,6 @@ class Results2D:
         self.plotmin = min(result)
         self.plotmax = max(result)
 
-
     def update_cutoff(self, cutoff):
         """
 
@@ -318,5 +407,21 @@ class Results2D:
         self.plotmin = min(result)
         self.plotmax = max(result)
         return
+
+    def plot_ecdf(self, pressure):
+        fig, ax = plt.subplots()
+        for line in self.lines:
+            if len(line) != 1:
+                ecdf_stack = []
+                for segment in line:
+                    ecdf_stack.append(segment.ecdf)
+            else:
+                out_ecdf = line[0].ecdf
+                ax.plot(out_ecdf[:, 0], out_ecdf[:, 1], 'k-')
+
+
+
+
+
 
 
