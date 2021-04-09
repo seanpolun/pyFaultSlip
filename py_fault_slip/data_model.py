@@ -52,6 +52,7 @@ class ModelDefaults:
         self.az_unit = "deg"
         self.az_unc_perc = az_unc / 360.
         self.sv = (self.density * 9.81) / 1000  # MPa/km
+        self.max_sv = (5000 * 9.81) / 1000
         self.stress_unit = "MPa/km"
         self.sh_max_az = inputs["sh_max_az"]
         self.sh_min_az = inputs["sh_min_az"]
@@ -77,44 +78,46 @@ class ModelInputs:
           input_dict
           """
         defaults = ModelDefaults()
-        if "max_pf" in input_dict.values():
+        if "max_pf" in input_dict.keys():
             self.max_pf = input_dict["max_pf"]
         else:
             self.max_pf = defaults.max_pf
 
-        if "dip" in input_dict.values():
-            if "dip_unc" in input_dict.values():
+        if "dip" in input_dict.keys():
+            if "dip_unc" in input_dict.keys():
                 self.Dip = UncClass(input_dict["dip"], defaults.dip_unit, input_dict["dip_unc"])
             else:
                 self.Dip = UncClass(input_dict["dip"], defaults.dip_unit)
         else:
             self.Dip = UncClass(defaults.dip, defaults.dip_unit)
-        if "sv" in input_dict.values():
-            if "sv_unc" in input_dict.values():
+        if "sv" in input_dict.keys():
+            if input_dict["sv"] > defaults.max_sv:
+                warnings.warn('Vertical stress gradient for density > 5000 kg/m^3. Are you sure you input a gradient?')
+            if "sv_unc" in input_dict.keys():
                 self.Sv = UncClass(input_dict["sv"], defaults.stress_unit, input_dict["sv_unc"])
             else:
                 self.Sv = UncClass(input_dict["sv"], defaults.stress_unit)
         else:
             self.Sv = UncClass(defaults.sv, defaults.stress_unit)
-        if "s_hydro" in input_dict.values():
+        if "s_hydro" in input_dict.keys():
             self.SHydro = UncClass(input_dict["s_hydro"], defaults.stress_unit)
         else:
-            if "pf_max" in input_dict.values():
+            if "pf_max" in input_dict.keys():
                 new_hydro = input_dict["pf_max"] / input_dict["depth"]
                 self.SHydro = UncClass(new_hydro, defaults.stress_unit)
             else:
                 self.SHydro = UncClass(defaults.hydro, defaults.stress_unit)
-        if "mu" in input_dict.values():
-            if "mu_unc" in input_dict.values():
+        if "mu" in input_dict.keys():
+            if "mu_unc" in input_dict.keys():
                 self.Mu = UncClass(input_dict["mu"], input_dict["mu_unc"])
             else:
                 self.Mu = UncClass(defaults.mu)
         else:
             self.Mu = UncClass(defaults.mu)
 
-        if "shmax" in input_dict.values():
+        if "shmax" in input_dict.keys():
             shmax = float(input_dict['shmax'])
-            if "shmin" in input_dict.values():
+            if "shmin" in input_dict.keys():
                 shmin = float(input_dict['shmin'])
                 if shmax > self.Sv.mean > shmin:
                     self.ShMaxSS = UncClass(shmax, defaults.stress_unit)
@@ -146,20 +149,20 @@ class ModelInputs:
             self.ShMaxN = UncClass(defaults.shmax_n, defaults.stress_unit)
             self.ShMinN = UncClass(defaults.shmin_n, defaults.stress_unit)
 
-        if "shmaxaz" in input_dict.values():
-            if "az_unc" in input_dict.values():
+        if "shmaxaz" in input_dict.keys():
+            if "az_unc" in input_dict.keys():
                 self.ShMaxAz = UncClass(input_dict["shmaxaz"], defaults.az_unit, input_dict["az_unc"])
             else:
                 self.ShMaxAz = UncClass(input_dict["shmaxaz"], defaults.az_unit, defaults.az_unc_perc)
         else:
             self.ShMaxAz = UncClass(defaults.sh_max_az, defaults.az_unit, defaults.az_unc_perc)
-        if "shminaz" in input_dict.values():
-            if "az_unc" in input_dict.values():
+        if "shminaz" in input_dict.keys():
+            if "az_unc" in input_dict.keys():
                 self.ShMinAz = UncClass(input_dict["shminaz"], defaults.az_unit, input_dict["az_unc"])
             else:
                 self.ShMinAz = UncClass(input_dict["shminaz"], defaults.az_unit, defaults.az_unc_perc)
         else:
-            if "shmaxaz" in input_dict.values():
+            if "shmaxaz" in input_dict.keys():
                 self.ShMinAz = UncClass(self.ShMaxAz.mean + 90., defaults.az_unit, defaults.az_unc_perc)
             else:
                 self.ShMinAz = UncClass(defaults.sh_min_az, defaults.az_unit, defaults.az_unc_perc)
@@ -300,13 +303,20 @@ class SegmentMC2dResult:
         n1 = pf1.size
         pf2 = pf1[inds]
         if pf2.size == 0:
-            x = np.array([0., 0., 0.])
+            max_pf = np.max(pf1)
+            x = np.array([max_pf, max_pf, max_pf])
+            # x = np.empty(5000)
+            # x.fill(np.nan)
             y = np.array([0., 0.5, 1.])
+            # y = np.linspace(0., 1., 5000)
             self.ecdf = np.column_stack((x, y))
-        pf2.sort()
-        n2 = pf2.size
-        y = np.linspace(1.0 / n1, 1, n2)
-        self.ecdf = np.column_stack((pf2, y))
+            self.no_fail = True
+        else:
+            self.no_fail = False
+            pf2.sort()
+            n2 = pf2.size
+            y = np.linspace(1.0 / n1, 1, n2)
+            self.ecdf = np.column_stack((pf2, y))
 
     def ecdf_cutoff(self, cutoff):
         """
@@ -320,8 +330,13 @@ class SegmentMC2dResult:
 
         """
         # self.ecdf[:, 0] = self.ecdf[:, 0] - hydrostatic_pres
-        ind_fail = (np.abs(self.ecdf[:, 1] - cutoff)).argmin()
-        fail_pressure = self.ecdf[ind_fail, 0]
+        if self.no_fail:
+            # print(self.ecdf[:, 0])
+            fail_pressure = max(self.ecdf[:, 0])
+        else:
+            ind_fail = (np.abs(self.ecdf[:, 1] - cutoff)).argmin()
+            fail_pressure = self.ecdf[ind_fail, 0]\
+
         return fail_pressure
 
     def pressure_cutoff(self, cutoff):
@@ -335,8 +350,11 @@ class SegmentMC2dResult:
         -------
 
         """
-        ind_fail = (np.abs(self.ecdf[:, 0] - cutoff)).argmin()
-        fail_prob = self.ecdf[ind_fail, 1]
+        if self.no_fail:
+            fail_prob = 0.
+        else:
+            ind_fail = (np.abs(self.ecdf[:, 0] - cutoff)).argmin()
+            fail_prob = self.ecdf[ind_fail, 1]
         return fail_prob
 
     def plot_ecdf(self, pressure):

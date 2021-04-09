@@ -255,8 +255,8 @@ def rot_matrix_axis_angle(axis, angle):
     #    rot = math.radians(angle)
     ident = np.identity(3)
     out = np.outer(axis, axis)
-    a_x = np.array([[0, -a3, a2], [a3, 0, -a2], [-a2, a1, 0]])
-    rot_matrix = (math.cos(angle) * ident) + (math.sin(angle) * a_x) + (1 - math.cos(angle) * out)
+    a_x = np.array([[0, -a3, a2], [a3, 0, -a1], [-a2, a1, 0]])
+    rot_matrix = (math.cos(angle) * ident) + (math.sin(angle) * a_x) + (1 - math.cos(angle)) * out
     return rot_matrix
 
 
@@ -312,8 +312,8 @@ def define_principal_stresses(sv1, depth, shmin1, shmax1, hminaz, hmaxaz, sv_unc
     if round(abs(hmaxaz - hminaz), 0) != 90.:
         raise ValueError('hmin and hmax are not orthogonal')
     # TODO: Truly fix azimuth issue with stress. Currently add 90 degrees to max stress direction.
-    # hmaxaz = math.radians(hmaxaz) + (math.pi/2)
-    hmaxaz = math.radians(hmaxaz)
+    hmaxaz = math.radians(hmaxaz) + (math.pi/2)
+    # hmaxaz = math.radians(hmaxaz)
 
     if is_3d:
         sv1 = sv1 / depth
@@ -389,7 +389,9 @@ def rotate_plane_stress(sigma_1_ax, plane_norm, princ_stress_tensor):
     numpy.ndarray
         3x3 matrix of resolved stress components on plane
     """
+    # TODO: Implement quaternion notation instead of axis angle?
     rot_axis = np.cross(plane_norm, sigma_1_ax)
+    rot_axis = rot_axis / np.linalg.norm(rot_axis)
     rot_angle = -1 * np.dot(plane_norm, sigma_1_ax)
     rotmatrix = rot_matrix_axis_angle(rot_axis, rot_angle)
     plane_stress_tensor = rotmatrix @ princ_stress_tensor @ rotmatrix.T
@@ -600,14 +602,18 @@ def monte_carlo_slip_tendency(pole, pole_unc, stress_tensor, stress_unc, axis, a
         pf1 = (hydro2 - hydro1) * np.random.random() + hydro1
         mu1 = (np.random.randn() * mu_unc) + mu
 
-        # plane_stress = rotate_plane_stress(axis1, pole1, stress1)
+        plane_stress = rotate_plane_stress(axis1, pole1, stress1)
+        pole_N_centered = np.array([1., 0., 0.])
+        pole_N_centered = pole_N_centered / np.linalg.norm(pole_N_centered)
         # Leave this in for SHAME
-        # sigma_n = plane_stress[0, 0]
-        # sigma_t = plane_stress[2, 0]
-        sigma_n_vec = np.dot(stress1, pole1)
-        sigma_n = np.sqrt(sigma_n_vec.dot(sigma_n_vec))
-        sigma_t_mat = np.sqrt((stress1 @ stress1) - (sigma_n ** 2))
-        sigma_t = np.nansum(sigma_t_mat[:])
+        sigma_n = plane_stress[0, 0]
+        sigma_tyx = plane_stress[1, 0]
+        sigma_tzx = plane_stress[2, 0]
+        sigma_t = np.sqrt((sigma_tyx ** 2) + (sigma_tzx ** 2))
+        # sigma_n_vec = plane_stress @ pole_N_centered
+        # sigma_n = np.sqrt(sigma_n_vec.dot(sigma_n_vec))
+        # sigma_t_mat = np.sqrt(np.abs(plane_stress @ plane_stress) - (sigma_n ** 2))
+        # sigma_t = np.nansum(sigma_t_mat[:])
         # slip_tendency = sigma_t / sigma_n
         sigma_n_eff = sigma_n - pf1
         slip_tendency_eff = sigma_t / sigma_n_eff
@@ -706,7 +712,7 @@ def slip_tendency_2d(infile, input_model, input_params, dump_for_fsp=False):
     # Stress tensor needs to be changed from gradient to value at depth
     stress_tensor = stress_tensor * depth
     stress_unc = stress_unc * depth
-
+    # TODO: Convert lineament to UTM if in lat long
     lineaments = gp.GeoSeries.from_file(infile)
     bounds1 = lineaments.total_bounds
     #    lin_crs = lineaments.crs
@@ -1065,7 +1071,7 @@ def plot_all(out_features, model_input, input_parameters):
     elif flag == 'mc':
         axcb.set_label('Delta P over Hydrostatic to Failure [MPa]')
     ax2 = fig.add_axes([0.15, 0.1, 0.2, 0.2])
-    str_img = plt.imread('./resources/h_stresses.png')
+    str_img = plt.imread('../resources/h_stresses.png')
     stress_im = ax2.imshow(str_img)
     midx = str_img.shape[0] / 2
     midy = str_img.shape[1] / 2
@@ -1077,12 +1083,12 @@ def plot_all(out_features, model_input, input_parameters):
     plt.show()
 
 
-def plot_like_fsp(out_features, model_input, input_parameters):
+def plot_like_fsp(out_features, model_input, input_parameters, cutoff=50.0):
     xmin = out_features.xmin
     xmax = out_features.xmax
     ymin = out_features.ymin
     ymax = out_features.ymax
-    cutoff = 2.  # 2 MPa (this is hardcoded because FSP does it that way)
+    # cutoff = 2.  # 2 MPa (this is hardcoded because FSP does it that way)
     # plotmin = out_features.plotmin
     # plotmax = out_features.plotmax
     # cutoff = out_features.cutoff
