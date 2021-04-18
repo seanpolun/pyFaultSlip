@@ -299,10 +299,13 @@ class SegmentMC2dResult:
         pf1 = pf_results[:, 0]
         mu1 = pf_results[:, 1]
         slip_tend = pf_results[:, 2]
-        inds = slip_tend > mu1
+        inds = (slip_tend > mu1) | (slip_tend < 0.)
         n1 = pf1.size
         pf2 = pf1[inds]
-        if pf2.size == 0:
+        n2 = pf2.size
+        cond_prob = n2 / n1
+
+        if n2 == 0:
             max_pf = np.max(pf1)
             x = np.array([max_pf, max_pf, max_pf])
             # x = np.empty(5000)
@@ -315,7 +318,7 @@ class SegmentMC2dResult:
             self.no_fail = False
             pf2.sort()
             n2 = pf2.size
-            y = np.linspace(1.0 / n1, 1, n2)
+            y = np.linspace(1 / n2, 1, n2)
             self.ecdf = np.column_stack((pf2, y))
 
     def ecdf_cutoff(self, cutoff):
@@ -361,7 +364,7 @@ class SegmentMC2dResult:
         fig, ax = plt.subplots()
 
         out_ecdf = self.ecdf
-        ax.plot(out_ecdf[:, 0], out_ecdf[:, 1], 'k-')
+        ax.plot(out_ecdf[:, 0], out_ecdf[:, 1], drawstyle='steps')
 
 
 class Results2D:
@@ -424,6 +427,7 @@ class Results2D:
                 result.append(obj.ecdf_cutoff(cutoff))
         self.plotmin = min(result)
         self.plotmax = max(result)
+        self.cutoff = cutoff
         return
 
     def plot_ecdf(self, pressure):

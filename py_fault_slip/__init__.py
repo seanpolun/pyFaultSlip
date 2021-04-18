@@ -312,8 +312,8 @@ def define_principal_stresses(sv1, depth, shmin1, shmax1, hminaz, hmaxaz, sv_unc
     if round(abs(hmaxaz - hminaz), 0) != 90.:
         raise ValueError('hmin and hmax are not orthogonal')
     # TODO: Truly fix azimuth issue with stress. Currently add 90 degrees to max stress direction.
-    hmaxaz = math.radians(hmaxaz) + (math.pi/2)
-    # hmaxaz = math.radians(hmaxaz)
+    # hmaxaz = math.radians(hmaxaz) + (math.pi/2)
+    hmaxaz = math.radians(hmaxaz)
 
     if is_3d:
         sv1 = sv1 / depth
@@ -575,8 +575,10 @@ def monte_carlo_slip_tendency(pole, pole_unc, stress_tensor, stress_unc, axis, a
     # n_sims = 10000
     # pf_range = 25.
     # TODO: Parametrize this
-    lower_pf = -0.2
-    upper_pf = 5.9
+    # lower_pf = -0.2
+    # upper_pf = 5.9
+    lower_pf = 0.
+    upper_pf = 5.
     # initialize uncertainty bounds
     princ_stress_vec = np.array([stress_tensor[0, 0], stress_tensor[1, 1], stress_tensor[2, 2]])
     princ_stress_unc = np.array([stress_unc[0, 0], stress_unc[1, 1], stress_unc[2, 2]])
@@ -772,7 +774,7 @@ def slip_tendency_2d(infile, input_model, input_params, dump_for_fsp=False):
                                                    sigma1_ax, sig_1_std, input_model.max_pf, input_model.Mu.mean,
                                                    input_model.Mu.std_perc)
                 # pf_out = st_out[:, 0]
-                # st_out[:, 0] = st_out[:, 0] - hydrostatic_pres
+                st_out[:, 0] = st_out[:, 0] - hydrostatic_pres
 
                 # true_data = pf_out[st_out[:, 2] > st_out[:, 1]]
                 # tend_out = ecdf(true_data)
@@ -1027,6 +1029,7 @@ def plot_all(out_features, model_input, input_parameters):
     elif flag == 'mc':
         plotmin1 = plotmin - 1
         plotmax1 = plotmax + 1
+        # plotmax1 = plotmax - (plotmax - plotmin)/2
         # plotmin1 = 0.
         # plotmax1 = 5.
         norm1 = mpl.colors.Normalize(vmin=plotmin1, vmax=plotmax1)
