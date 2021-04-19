@@ -29,14 +29,21 @@ import matplotlib.pyplot as plt
 import geopandas as gp
 import numba
 from shapely.geometry import LineString
-import meshio
+
 import warnings
 import datetime
-import trimesh
+
 import csv
 import py_fault_slip.data_model as data_model
 
 from tqdm.auto import tqdm
+
+try:
+    import meshio
+    import trimesh
+except ModuleNotFoundError as err:
+    print("Mesh utilities not installed. Only 2D functionality is enabled.")
+    print(err)
 
 nsims = 10000
 
