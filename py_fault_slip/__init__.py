@@ -326,6 +326,7 @@ def define_principal_stresses(sv1, depth, shmin1, shmax1, hminaz, hmaxaz, sv_unc
         sv1 = sv1 / depth
         shmax1 = shmax1 / depth
         shmin1 = shmin1 / depth
+        DeprecationWarning("Stresses should be provided in terms of gradients. Otherwise may break things.")
     axis_out = np.zeros((nsim, 3))
     stress_out = np.zeros((nsim, 3))
     for i in numba.prange(nsim):
@@ -549,7 +550,7 @@ def ecdf(indata):
 
 @numba.njit(parallel=True)
 def monte_carlo_slip_tendency(pole, pole_unc, stress_tensor, stress_unc, axis, axis_unc, pf, mu,
-                              mu_unc):
+                              mu_unc, pf_l=0.5, pf_u=2.5):
     """
     Computes fault slip tendency for a specific planar node defined by a pole.
     Parameters
@@ -581,11 +582,12 @@ def monte_carlo_slip_tendency(pole, pole_unc, stress_tensor, stress_unc, axis, a
 
     # n_sims = 10000
     # pf_range = 25.
-    # TODO: Parametrize this
     # lower_pf = -0.2
     # upper_pf = 5.9
-    lower_pf = 0.
-    upper_pf = 5.
+    # lower_pf = 0.
+    # upper_pf = 5.
+    upper_pf = pf_u
+    lower_pf = pf_l
     # initialize uncertainty bounds
     princ_stress_vec = np.array([stress_tensor[0, 0], stress_tensor[1, 1], stress_tensor[2, 2]])
     princ_stress_unc = np.array([stress_unc[0, 0], stress_unc[1, 1], stress_unc[2, 2]])
@@ -633,7 +635,7 @@ def monte_carlo_slip_tendency(pole, pole_unc, stress_tensor, stress_unc, axis, a
 
 
 # @numba.jit(forceobj=True, parallel=True)
-def slip_tendency_2d(infile, input_model, input_params, dump_for_fsp=False):
+def slip_tendency_2d(infile, input_model, input_params, dump_for_fsp=False, simplify_geom=0.0, prior_results=None):
     """
     Compute a  2d (i.e. where the 2d geometry is only known) slip tendency analysis. Outputs a map, as well
     as a table with the following schema:
@@ -707,7 +709,7 @@ def slip_tendency_2d(infile, input_model, input_params, dump_for_fsp=False):
                                                                                         sv_unc=sv.std_unit(),
                                                                                         shmin_unc=shmin.std_unit(),
                                                                                         shmax_unc=shmax.std_unit(),
-                                                                                        v_tilt_unc=10,
+                                                                                        v_tilt_unc=1,
                                                                                         h_az_unc=shmaxaz.std_unit(),
                                                                                         is_3d=False)
 
@@ -723,9 +725,13 @@ def slip_tendency_2d(infile, input_model, input_params, dump_for_fsp=False):
     stress_unc = stress_unc * depth
     # TODO: Convert lineament to UTM if in lat long
     lineaments = gp.GeoSeries.from_file(infile)
+    lineaments = lineaments.simplify(simplify_geom)
     bounds1 = lineaments.total_bounds
     #    lin_crs = lineaments.crs
     num_features = len(lineaments)
+    if prior_results is not None:
+        if prior_results.lines.__len__() != num_features:
+            raise ValueError("Number of features not the same with prior results. Double check what you input.")
     out_features_list = []
     if dump_for_fsp:
         fsp_dump = []
@@ -768,7 +774,7 @@ def slip_tendency_2d(infile, input_model, input_params, dump_for_fsp=False):
                 fault_plane = Plane(azimuth, dip_rad, dip_unc=math.radians(dip.std_unit()))
                 fault_plane_pole = fault_plane.pole
                 slip_tend, fail_pressure = deterministic_slip_tend(fault_plane_pole, stress_tensor, sigma1_ax,
-                                                                   input_model.max_pf, input_model.Mu.mean)
+                                                                   hydrostatic_pres, input_model.Mu.mean)
                 result = data_model.SegmentDet2dResult(work_feat_coords[j][0], work_feat_coords[j][1],
                                                        work_feat_coords[j + 1][0],
                                                        work_feat_coords[j + 1][1], slip_tend, metadata)
@@ -778,8 +784,9 @@ def slip_tendency_2d(infile, input_model, input_params, dump_for_fsp=False):
                 fault_plane_pole = fault_plane.pole
                 fault_plane_unc = fault_plane.pole_unc
                 st_out = monte_carlo_slip_tendency(fault_plane_pole, fault_plane_unc, stress_tensor, stress_unc,
-                                                   sigma1_ax, sig_1_std, input_model.max_pf, input_model.Mu.mean,
-                                                   input_model.Mu.std_perc)
+                                                   sigma1_ax, sig_1_std, hydrostatic_pres, input_model.Mu.mean,
+                                                   input_model.Mu.std_perc, pf_l=input_model.hydro_l,
+                                                   pf_u=input_model.hydro_u)
                 # pf_out = st_out[:, 0]
                 st_out[:, 0] = st_out[:, 0] - hydrostatic_pres
 
@@ -789,16 +796,23 @@ def slip_tendency_2d(infile, input_model, input_params, dump_for_fsp=False):
                 # ind_fail = (np.abs(tend_out[:, 1] - fail_threshold)).argmin()
                 # outrow = [j, work_feat_coords[j][0], work_feat_coords[j][1], work_feat_coords[j + 1][0],
                 #          work_feat_coords[j + 1][1], tend_out[ind_fail, 0]]
-                result = data_model.SegmentMC2dResult(work_feat_coords[j][0], work_feat_coords[j][1],
-                                                      work_feat_coords[j + 1][0], work_feat_coords[j + 1][1],
-                                                      st_out, metadata)
+                if prior_results is not None:
+                    prior_results.lines[i][j].append_results(st_out)
+                elif prior_results is None:
+                    result = data_model.SegmentMC2dResult(work_feat_coords[j][0], work_feat_coords[j][1],
+                                                            work_feat_coords[j + 1][0], work_feat_coords[j + 1][1],
+                                                            st_out, metadata)
             else:
                 raise ValueError('Cannot resolve calculation mode / not implemented yet')
             # flat_out_features.append()
             # fault_out_arr.append(outrow)
-            out_features_list.append(result)
+            if prior_results is None:
+                out_features_list.append(result)
         # print(["Finished object# ", str(i + 1)])
-    out_features = data_model.Results2D(out_features_list, cutoff=fail_threshold)
+    if prior_results is not None:
+        out_features = prior_results
+    else:
+        out_features = data_model.Results2D(out_features_list, cutoff=fail_threshold)
     # flat_out_features = np.array(flat_out_features)
     # plotmin = np.min(flat_out_features[:, 5])
     # plotmax = np.max(flat_out_features[:, 5])
@@ -809,7 +823,7 @@ def slip_tendency_2d(infile, input_model, input_params, dump_for_fsp=False):
     return out_features
 
 
-def slip_tendency_3d(in_meshes, input_model, input_params):
+def slip_tendency_3d(in_meshes, input_model, input_params, out_dir="./", out_format=".vtk"):
     """
     Calculate slip tendency for 3D mesh (enumerated in list).
 
@@ -874,39 +888,44 @@ def slip_tendency_3d(in_meshes, input_model, input_params):
     # attr_75 = "PoreFluid_75"
     # attr_99 = "PoreFluid_99"
     prob_levels = [
+        1,
+        5,
+        10,
         15,
         18,
         20,
         22,
-        25
+        25,
+        33,
+        45,
+        50
     ]
 
     if mode == 'mc':
-        stress_tensor, sigma1_ax, stress_unc, sig_1_std = define_principal_stresses(sv.mean, ref_depth, shmin.mean,
+        stress_tensor, sigma1_ax, stress_unc, sig_1_std, _a = define_principal_stresses(sv.mean, ref_depth, shmin.mean,
                                                                                     shmax.mean, shminaz.mean,
                                                                                     shmaxaz.mean, sv_unc=sv.std_unit(),
                                                                                     shmin_unc=shmin.std_unit(),
                                                                                     shmax_unc=shmax.std_unit(),
                                                                                     v_tilt_unc=10,
                                                                                     h_az_unc=shmaxaz.std_unit(),
-                                                                                    is_3d=True)
+                                                                                    is_3d=False)
 
     elif mode == 'det':
-        stress_tensor, sigma1_ax, stress_unc, sig_1_std = define_principal_stresses(sv.mean, ref_depth, shmin.mean,
+        stress_tensor, sigma1_ax, stress_unc, sig_1_std, _a = define_principal_stresses(sv.mean, ref_depth, shmin.mean,
                                                                                     shmax.mean, shminaz.mean,
                                                                                     shmaxaz.mean)
 
     else:
         raise ValueError('No recognized processing mode [''mc'' or ''det'']')
 
-    # convert stress tensors into gradients / km
-    # TODO: Fix this shit
-    stress_grad_tensor = stress_tensor / ref_depth
-    # stress_grad_unc = stress_unc / ref_depth
-
     for mesh_num in range(len(in_meshes)):
         mesh_path = in_meshes[mesh_num]
+        abs_mesh_path = os.path.abspath(mesh_path)
+        root_path = os.path.dirname(abs_mesh_path)
         base_path, ext = os.path.splitext(mesh_path)
+        base_name = os.path.basename(mesh_path)
+        base_name = base_name.split(".")[0]
         # handle gocad tsurf files (UGH)
         if ext == '.ts':
             outmesh = tsurf_read(mesh_path)
@@ -956,21 +975,24 @@ def slip_tendency_3d(in_meshes, input_model, input_params):
             # convert Z AMSL to Z depth (deeper is positive)
             depth = ((tri_center[2] * -1) + datum) / 1000
 
-            stress_tensor = stress_grad_tensor * depth
+            stress_tensor_depth = stress_tensor * depth
             hydrostatic_pres = hydrostatic_grad * depth
             # stress_unc = stress_grad_unc * depth
             if mode == 'det':
-                slip_tend, fail_pressure = deterministic_slip_tend(fault_plane_pole, stress_tensor, sigma1_ax,
+                slip_tend, fail_pressure = deterministic_slip_tend(fault_plane_pole, stress_tensor_depth, sigma1_ax,
                                                                    input_model.max_pf, input_model.Mu.mean)
                 outrow = [mesh_num, face_num, slip_tend, fail_pressure]
             elif mode == 'mc':
-                pole_unc = 0.05
+                pole_unc = 0.01
                 fault_plane_unc = fault_plane_pole * pole_unc
-                st_out = monte_carlo_slip_tendency(fault_plane_pole, fault_plane_unc, stress_tensor, stress_unc,
-                                                   sigma1_ax, sig_1_std, input_model.max_pf, input_model.Mu.mean,
-                                                   input_model.Mu.std_perc)
-                pf_out = st_out[:, 0]
-                result = data_model.MeshFaceResult(face_num, face, p1, p2, p3, pf_out - hydrostatic_pres)
+                st_out = monte_carlo_slip_tendency(fault_plane_pole, fault_plane_unc, stress_tensor_depth, stress_unc,
+                                                   sigma1_ax, sig_1_std, hydrostatic_pres, input_model.Mu.mean,
+                                                   input_model.Mu.std_perc, pf_l=input_model.hydro_l,
+                                                   pf_u=input_model.hydro_u)
+                # pf_out = st_out[:, 0]
+                pf_out = st_out
+                pf_out[:, 0] = st_out[:, 0] - hydrostatic_pres
+                result = data_model.MeshFaceResult(face_num, face, p1, p2, p3, pf_out)
                 # true_data = pf_out[st_out[:, 2] > st_out[:, 1]]
                 # tend_out = ecdf(true_data)
                 # tend_out[:, 0] = tend_out[:, 0] - hydrostatic_pres
@@ -998,8 +1020,14 @@ def slip_tendency_3d(in_meshes, input_model, input_params):
         # mesh.set_attribute(attr_50, pf_50_prob)
         # mesh.set_attribute(attr_75, pf_75_prob)
         # mesh.set_attribute(attr_99, pf_99_prob)
+        out_mesh_name = base_name + '_proc_' + stress + "_" + datetime.datetime.now().strftime('%Y%m%d_%H%M%S') + out_format
+        if out_dir != "./":
+            if not os.path.isdir(out_dir):
+                os.mkdir(out_dir)
+            out_mesh_file = os.path.join(out_dir, out_mesh_name)
+        else:
+            out_mesh_file = os.path.join(root_path, out_mesh_name)
 
-        out_mesh_file = base_path + '_proc_norm' + datetime.datetime.now().strftime('%Y%m%d_%H%M%S') + '.msh'
         # pymesh.save_mesh(out_mesh_file, mesh, *mesh.get_attribute_names())
         output_mesh.write(out_mesh_file)
     return

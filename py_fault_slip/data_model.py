@@ -6,7 +6,9 @@ import os
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import warnings
-
+import geopandas as gpd
+import shapely.geometry as shpg
+from scipy.interpolate import interp1d
 
 @dataclasses.dataclass
 class UncClass:
@@ -46,6 +48,8 @@ class ModelDefaults:
         self.density_unit = "kg/m^3"
         self.hydro = inputs["hydro"]
         self.hydro_unit = "MPa/km"
+        self.hydro_under = inputs["hydro_under"]
+        self.hydro_upper = inputs["hydro_upper"]
         self.dip = inputs["dip"]
         self.dip_unit = "deg"
         az_unc = inputs["az_unc"]
@@ -57,6 +61,7 @@ class ModelDefaults:
         self.sh_max_az = inputs["sh_max_az"]
         self.sh_min_az = inputs["sh_min_az"]
         self.mu = inputs["mu"]
+        self.mu_unit = "unitless"
 
         self.F_mu = (math.sqrt(self.mu ** 2 + 1)) ** 2
         abs_shmax = self.F_mu * (self.sv - self.hydro) + self.hydro
@@ -85,7 +90,7 @@ class ModelInputs:
 
         if "dip" in input_dict.keys():
             if "dip_unc" in input_dict.keys():
-                self.Dip = UncClass(input_dict["dip"], defaults.dip_unit, input_dict["dip_unc"])
+                self.Dip = UncClass(input_dict["dip"], defaults.dip_unit, input_dict["dip_unc"] / input_dict["dip"])
             else:
                 self.Dip = UncClass(input_dict["dip"], defaults.dip_unit)
         else:
@@ -99,43 +104,65 @@ class ModelInputs:
                 self.Sv = UncClass(input_dict["sv"], defaults.stress_unit)
         else:
             self.Sv = UncClass(defaults.sv, defaults.stress_unit)
-        if "s_hydro" in input_dict.keys():
-            self.SHydro = UncClass(input_dict["s_hydro"], defaults.stress_unit)
+        if "hydro" in input_dict.keys():
+            self.SHydro = UncClass(input_dict["hydro"], defaults.stress_unit)
         else:
             if "pf_max" in input_dict.keys():
                 new_hydro = input_dict["pf_max"] / input_dict["depth"]
                 self.SHydro = UncClass(new_hydro, defaults.stress_unit)
             else:
                 self.SHydro = UncClass(defaults.hydro, defaults.stress_unit)
+        if "hydro_under" in input_dict.keys():
+            self.hydro_l = self.SHydro.mean * input_dict["hydro_under"]
+        else:
+            self.hydro_l = self.SHydro.mean * defaults.hydro_under
+
+        if "hydro_upper" in input_dict.keys():
+            self.hydro_u = self.SHydro.mean * input_dict["hydro_upper"]
+        else:
+            self.hydro_u = self.SHydro.mean * defaults.hydro_upper
+
         if "mu" in input_dict.keys():
             if "mu_unc" in input_dict.keys():
-                self.Mu = UncClass(input_dict["mu"], input_dict["mu_unc"])
+                self.Mu = UncClass(input_dict["mu"], defaults.mu_unit, input_dict["mu_unc"])
             else:
-                self.Mu = UncClass(defaults.mu)
+                self.Mu = UncClass(defaults.mu, defaults.mu_unit)
         else:
-            self.Mu = UncClass(defaults.mu)
+            self.Mu = UncClass(defaults.mu, defaults.mu_unit)
 
         if "shmax" in input_dict.keys():
             shmax = float(input_dict['shmax'])
             if "shmin" in input_dict.keys():
                 shmin = float(input_dict['shmin'])
                 if shmax > self.Sv.mean > shmin:
-                    self.ShMaxSS = UncClass(shmax, defaults.stress_unit)
-                    self.ShMinSS = UncClass(shmin, defaults.stress_unit)
+                    if {"shMunc", "shmiunc"} <= input_dict.keys():
+                        self.ShMaxSS = UncClass(shmax, defaults.stress_unit, float(input_dict["shMunc"]) / shmax)
+                        self.ShMinSS = UncClass(shmin, defaults.stress_unit, float(input_dict["shmiunc"]) / shmin)
+                    else:
+                        self.ShMaxSS = UncClass(shmax, defaults.stress_unit)
+                        self.ShMinSS = UncClass(shmin, defaults.stress_unit)
                     self.ShMaxR = UncClass(defaults.shmax_r, defaults.stress_unit)
                     self.ShMinR = UncClass(defaults.shmin_r, defaults.stress_unit)
                     self.ShMaxN = UncClass(defaults.shmax_n, defaults.stress_unit)
                     self.ShMinN = UncClass(defaults.shmin_n, defaults.stress_unit)
                 elif shmax > shmin > self.Sv.mean:
-                    self.ShMaxR = UncClass(shmax, defaults.stress_unit)
-                    self.ShMinR = UncClass(shmin, defaults.stress_unit)
+                    if {"shMunc", "shmiunc"} <= input_dict.keys():
+                        self.ShMaxR = UncClass(shmax, defaults.stress_unit, float(input_dict["shMunc"]) / shmax)
+                        self.ShMinR = UncClass(shmin, defaults.stress_unit, float(input_dict["shmiunc"]) / shmin)
+                    else:
+                        self.ShMaxR = UncClass(shmax, defaults.stress_unit)
+                        self.ShMinR = UncClass(shmin, defaults.stress_unit)
                     self.ShMaxSS = UncClass(defaults.shmax_ss, defaults.stress_unit)
                     self.ShMinSS = UncClass(defaults.shmin_ss, defaults.stress_unit)
                     self.ShMaxN = UncClass(defaults.shmax_n, defaults.stress_unit)
                     self.ShMinN = UncClass(defaults.shmin_n, defaults.stress_unit)
                 elif self.Sv.mean > shmax > shmin:
-                    self.ShMaxN = UncClass(shmax, defaults.stress_unit)
-                    self.ShMinN = UncClass(shmin, defaults.stress_unit)
+                    if {"shMunc", "shmiunc"} <= input_dict.keys():
+                        self.ShMaxN = UncClass(shmax, defaults.stress_unit, float(input_dict["shMunc"]) / shmax)
+                        self.ShMinN = UncClass(shmin, defaults.stress_unit, float(input_dict["shmiunc"]) / shmin)
+                    else:
+                        self.ShMaxN = UncClass(shmax, defaults.stress_unit)
+                        self.ShMinN = UncClass(shmin, defaults.stress_unit)
                     self.ShMaxR = UncClass(defaults.shmax_r, defaults.stress_unit)
                     self.ShMinR = UncClass(defaults.shmin_r, defaults.stress_unit)
                     self.ShMaxSS = UncClass(defaults.shmax_ss, defaults.stress_unit)
@@ -174,10 +201,10 @@ class ModelInputs:
         mu = np.random.normal(self.Mu.mean, self.Mu.std_perc, n_samples)
         s_v = np.random.normal(self.Sv.mean, self.Sv.std_unit(), n_samples)
         # s_hydro = np.random.normal(self.SHydro.mean, self.SHydro.std_unit(), 500)
-        lower_pf = -0.04
-        upper_pf = 1.18
-        hydro1 = self.SHydro.mean - lower_pf
-        hydro2 = self.SHydro.mean + upper_pf
+        # lower_pf = -0.04
+        # upper_pf = 1.18
+        hydro1 = self.SHydro.mean - self.hydro_l
+        hydro2 = self.SHydro.mean + self.hydro_u
         s_hydro = (hydro2 - hydro1) * np.random.random(n_samples) + hydro1
         if stress == "reverse":
             sh_max = np.random.normal(self.ShMaxR.mean, self.ShMaxR.std_unit(), n_samples)
@@ -255,14 +282,48 @@ class MeshFaceResult:
         self.p1 = p1
         self.p2 = p2
         self.p3 = p3
-        if pf_results.size == 0:
-            x = np.array([0., 0., 0.])
+        # if pf_results.size == 0:
+        #     x = np.array([0., 0., 0.])
+        #     y = np.array([0., 0.5, 1.])
+        #     self.ecdf = np.column_stack((x, y))
+        # pf_results.sort()
+        # n = pf_results.size
+        # y = np.linspace(1.0 / n, 1, n)
+        # self.ecdf = np.column_stack((pf_results, y))
+        pf1 = pf_results[:, 0]
+        mu1 = pf_results[:, 1]
+        slip_tend = pf_results[:, 2]
+
+        inds = slip_tend >= mu1
+        n1 = pf1.size
+        pf2 = pf1[inds]
+        n2 = pf2.size
+
+        if n2 == 0:
+            max_pf = np.max(pf1)
+            x = np.array([max_pf, max_pf, max_pf])
+            # x = np.empty(5000)
+            # x.fill(np.nan)
             y = np.array([0., 0.5, 1.])
+            # y = np.linspace(0., 1., 5000)
             self.ecdf = np.column_stack((x, y))
-        pf_results.sort()
-        n = pf_results.size
-        y = np.linspace(1.0 / n, 1, n)
-        self.ecdf = np.column_stack((pf_results, y))
+            self.no_fail = True
+        elif n2 < 100 & n2 > 0:
+            self.no_fail = False
+            pf2.sort()
+            n2 = pf2.size
+            y = np.linspace(1 / n2, 1, n2)
+            n2_2 = 100
+            z = np.linspace(1 / n2_2, 1, n2_2)
+            pf2_interp = interp1d(y, pf2, kind='linear')
+            pf2_2 = pf2_interp(z)
+            self.ecdf = np.column_stack((pf2_2, z))
+        else:
+            self.no_fail = False
+            pf2.sort()
+            n2 = pf2.size
+            y = np.linspace(1 / n2, 1, n2)
+            self.ecdf = np.column_stack((pf2, y))
 
     def ecdf_cutoff(self, cutoff):
         """
@@ -276,6 +337,7 @@ class MeshFaceResult:
 
         """
         # self.ecdf[:, 0] = self.ecdf[:, 0] - hydrostatic_pres
+        cutoff = cutoff / 100
         ind_fail = (np.abs(self.ecdf[:, 1] - cutoff)).argmin()
         fail_pressure = self.ecdf[ind_fail, 0]
         return fail_pressure
@@ -299,11 +361,11 @@ class SegmentMC2dResult:
         pf1 = pf_results[:, 0]
         mu1 = pf_results[:, 1]
         slip_tend = pf_results[:, 2]
-        inds = (slip_tend > mu1) | (slip_tend < 0.)
+
+        inds = slip_tend >= mu1
         n1 = pf1.size
         pf2 = pf1[inds]
         n2 = pf2.size
-        cond_prob = n2 / n1
 
         if n2 == 0:
             max_pf = np.max(pf1)
@@ -314,6 +376,16 @@ class SegmentMC2dResult:
             # y = np.linspace(0., 1., 5000)
             self.ecdf = np.column_stack((x, y))
             self.no_fail = True
+        elif n2 < 100 & n2 > 0:
+            self.no_fail = False
+            pf2.sort()
+            n2 = pf2.size
+            y = np.linspace(1 / n2, 1, n2)
+            n2_2 = 100
+            z = np.linspace(1 / n2_2, 1, n2_2)
+            pf2_interp = interp1d(y, pf2, kind='linear')
+            pf2_2 = pf2_interp(z)
+            self.ecdf = np.column_stack((pf2_2, z))
         else:
             self.no_fail = False
             pf2.sort()
@@ -338,7 +410,7 @@ class SegmentMC2dResult:
             fail_pressure = max(self.ecdf[:, 0])
         else:
             ind_fail = (np.abs(self.ecdf[:, 1] - cutoff)).argmin()
-            fail_pressure = self.ecdf[ind_fail, 0]\
+            fail_pressure = self.ecdf[ind_fail, 0]
 
         return fail_pressure
 
@@ -360,11 +432,35 @@ class SegmentMC2dResult:
             fail_prob = self.ecdf[ind_fail, 1]
         return fail_prob
 
+    def append_results(self, results):
+        pf1 = results[:, 0]
+        mu1 = results[:, 1]
+        slip_tend = results[:, 2]
+        inds = slip_tend >= mu1
+        n1 = self.ecdf[:, 0].size
+        pf2 = pf1[inds]
+        n2 = pf2.size
+
+        if n2 == 0 & self.no_fail:
+            return
+        else:
+            self.no_fail = False
+            pf2 = np.concatenate((pf2, self.ecdf[:, 0]))
+            pf2.sort()
+            n2 = pf2.size
+            y = np.linspace(1 / n2, 1, n2)
+            self.ecdf = np.column_stack((pf2, y))
+
     def plot_ecdf(self, pressure):
         fig, ax = plt.subplots()
 
         out_ecdf = self.ecdf
         ax.plot(out_ecdf[:, 0], out_ecdf[:, 1], drawstyle='steps')
+
+    def plot_hist(self, n_bins=25):
+        fig, ax = plt.subplots()
+        hist_data = self.ecdf[:,0]
+        ax.hist(hist_data, bins=n_bins)
 
 
 class Results2D:
@@ -379,7 +475,8 @@ class Results2D:
         ----------
         input_list
         """
-        # self.segment_list = input_list
+        self.results_gdf = None
+        self.segment_list = input_list
         num_lines = len(np.unique([obj.line_id for obj in input_list]))
         self.lines = []
         for line in range(num_lines):
@@ -440,6 +537,36 @@ class Results2D:
             else:
                 out_ecdf = line[0].ecdf
                 ax.plot(out_ecdf[:, 0], out_ecdf[:, 1], 'k-')
+
+    def generate_gpd_df(self, crs, pres_cutoff=2.0, prob_cutoff=5):
+        segs_geo = []
+        line_id_list = []
+        seg_id_list = []
+        prob_list = []
+        pres_list = []
+        ind_list = []
+        ind = 1
+        for seg in self.segment_list:
+            geom = shpg.LineString([seg.p1, seg.p2])
+            segs_geo.append(geom)
+            line_id_list.append(seg.line_id)
+            seg_id_list.append(seg.seg_id)
+            pres_list.append(seg.ecdf_cutoff(prob_cutoff))
+            prob_list.append(seg.pressure_cutoff(pres_cutoff))
+            ind_list.append(ind)
+            ind = ind + 1
+        gdf_dict = {'index': ind_list, 'geometry': segs_geo, 'line_id': line_id_list, 'seg_id': seg_id_list, 'cutoff_prob': prob_list, 'cutoff_pres': pres_list}
+        gdf = gpd.GeoDataFrame(gdf_dict, crs=crs)
+
+        self.results_gdf = gdf
+        return
+
+    def rebuild_seg_list(self):
+        self.segment_list = [seg for line in self.lines for seg in line]
+
+
+
+
 
 
 

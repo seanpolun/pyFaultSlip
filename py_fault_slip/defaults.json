@@ -9,7 +9,9 @@
       "pf" : 50.0,
       "density" : 2500,
       "hydro" : 9.0,
-      "az_unc" : 15.0
+      "az_unc" : 15.0,
+      "hydro_under": 0.0,
+      "hydro_upper": 2.25
     }
   ]
 }
