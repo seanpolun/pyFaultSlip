@@ -18,7 +18,7 @@ pyFaultSlip depends on the following:
 ```
   conda create -n pyfaultslip python=3.11
   conda activate pyfaultslip
-  conda install -c conda-forge numpy matplotlib scipy geopandas shapely meshio trimesh numba pyqt
+  conda install -c conda-forge numpy matplotlib scipy geopandas shapely meshio trimesh numba pyqt tqdm
 ```
   
 
