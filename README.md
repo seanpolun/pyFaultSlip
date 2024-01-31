@@ -14,6 +14,14 @@ pyFaultSlip depends on the following:
 * [numba](https://numba.pydata.org/)
 * [pyqt5](https://pypi.org/project/PyQt5/)
 
+  To create a conda environment:
+```
+  conda create -n pyfaultslip python=3.11
+  conda activate pyfaultslip
+  conda install -c conda-forge numpy matplotlib scipy geopandas shapely meshio trimesh numba
+```
+  
+
 ## Usage
 pyFaultSlip works as both a command-line function / module and as a GUI interface (currently only implemented for 2D lineaments). 
 
@@ -24,4 +32,4 @@ Documentation forthcoming.
 ## Acknowledgements 
 This software was developed with support in part by the U.S. Department of Energy grant number DE-FE0031623. Neither the U.S. Government nor any agency thereof, nor any of their employees, makes any warranty, express or implied, or assumes any legal liability or responsibility for the accuracy, completeness, or usefulness of any information, apparatus, product, or process disclosed, or represents that its use would not infringe privately owned rights.
 
-(c) 2020 Sean G. Polun (MIT License)
+(c) 2020-2024 Sean G. Polun (MIT License)
