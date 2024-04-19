@@ -1,0 +1,8 @@
+numpy
+geopandas
+shapely
+meshio
+trimesh
+numba
+pyqt
+tqdm

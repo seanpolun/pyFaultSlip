@@ -71,7 +71,6 @@ class IOModel(QtCore.QAbstractListModel):
         # self.inputs['fail_percent'] = 50
         # self.inputs['shmaxaz'] = 0.
 
-
     def json_load(self, infile):
         """
         Loads JSON file with saved parameters
@@ -123,8 +122,8 @@ class MplCanvas(FigureCanvasQTAgg):
     def __init__(self, parent=None, width=5, height=4, dpi=100):
         self.fig = Figure(figsize=(width, height), dpi=dpi)
         self.axes = self.fig.add_subplot(111)
-        self.axcb = plt.colorbar(mpl.cm.ScalarMappable(cmap=plt.get_cmap('jet_r'), norm=mpl.colors.Normalize(vmin=0,
-                                                                                                             vmax=50)))
+        self.axcb = plt.colorbar(mpl.cm.ScalarMappable(cmap=plt.get_cmap('jet_r'),
+                                                       norm=mpl.colors.Normalize(vmin=0, vmax=50)), ax=self.axes)
         super(MplCanvas, self).__init__(self.fig)
 
 
@@ -243,7 +242,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # fig.ax = self.orient_canvas.fig.axes
         # fig.ax = fig.add_axes([0, 0, 1, 1])
         # self.orient_canvas.fig.ax = fig.ax
-        str_img = plt.imread('./resources/h_stresses.png')
+        str_img = plt.imread('../resources/h_stresses.png')
         stress_im = fig.axes[0].imshow(str_img)
         midx = str_img.shape[0] / 2
         midy = str_img.shape[1] / 2
@@ -260,7 +259,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.orient_canvas.fig.axes[0].cla()
         # ax = fig.axes
         # ax = fig.ax
-        str_img = plt.imread('./resources/h_stresses.png')
+        str_img = plt.imread('../resources/h_stresses.png')
         stress_im = fig.axes[0].imshow(str_img)
         midx = str_img.shape[0] / 2
         midy = str_img.shape[1] / 2

@@ -20,6 +20,10 @@ pyFaultSlip depends on the following:
   conda activate pyfaultslip
   conda install -c conda-forge numpy matplotlib scipy geopandas shapely meshio trimesh numba pyqt tqdm
 ```
+  To install pyFaultSlip:
+   ```
+   python -m pip install git+https://github.com/seanpolun/pyFaultSlip.git
+   ```
   
 
 ## Usage

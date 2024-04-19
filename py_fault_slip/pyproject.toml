@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "py_fault_slip"
+version = "0.0.1"
+authors = [
+    {name = "Sean G. Polun", email="polunsg@missouri.edu"},
+]
+description = "Programs to to probabilistic slip tendency analysis."
+readme = "README.md"
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+[project.urls]
+"Homepage" = "https://github.com/seanpolun/pyFaultSlip"
+"Bug Tracker" = "https://github.com/seanpolun/pyFaultSlip/issues"
