@@ -1,0 +1,6 @@
+include README.md
+include LICENSE
+include requirements.txt
+include src/py_fault_slip/defaults.json
+include src/py_fault_slip/MainWindow_2d.ui
+include src/py_fault_slip/resources/h_stresses.png

@@ -6,3 +6,4 @@ trimesh
 numba
 pyqt
 tqdm
+ipywidgets
