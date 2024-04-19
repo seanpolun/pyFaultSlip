@@ -34,7 +34,7 @@ import warnings
 import datetime
 
 import csv
-import src.py_fault_slip.data_model as data_model
+from . import data_model
 
 from tqdm.auto import tqdm
 
