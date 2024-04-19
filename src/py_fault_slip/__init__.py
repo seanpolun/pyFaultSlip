@@ -34,7 +34,7 @@ import warnings
 import datetime
 
 import csv
-import py_fault_slip.data_model as data_model
+import src.py_fault_slip.data_model as data_model
 
 from tqdm.auto import tqdm
 
@@ -800,8 +800,8 @@ def slip_tendency_2d(infile, input_model, input_params, dump_for_fsp=False, simp
                     prior_results.lines[i][j].append_results(st_out)
                 elif prior_results is None:
                     result = data_model.SegmentMC2dResult(work_feat_coords[j][0], work_feat_coords[j][1],
-                                                            work_feat_coords[j + 1][0], work_feat_coords[j + 1][1],
-                                                            st_out, metadata)
+                                                          work_feat_coords[j + 1][0], work_feat_coords[j + 1][1],
+                                                          st_out, metadata)
             else:
                 raise ValueError('Cannot resolve calculation mode / not implemented yet')
             # flat_out_features.append()
@@ -1109,7 +1109,7 @@ def plot_all(out_features, model_input, input_parameters):
     elif flag == 'mc':
         axcb.set_label('Delta P over Hydrostatic to Failure [MPa]')
     ax2 = fig.add_axes([0.15, 0.1, 0.2, 0.2])
-    str_img = plt.imread('../resources/h_stresses.png')
+    str_img = plt.imread('resources/h_stresses.png')
     stress_im = ax2.imshow(str_img)
     midx = str_img.shape[0] / 2
     midy = str_img.shape[1] / 2
@@ -1216,7 +1216,7 @@ def plot_like_fsp(out_features, model_input, input_parameters, cutoff=50.0):
         axcb.set_label('Failure Probability')
     ax2 = fig.add_axes([0.15, 0.1, 0.2, 0.2])
     # TODO: fix this to use a proper path
-    str_img = plt.imread('../resources/h_stresses.png')
+    str_img = plt.imread('resources/h_stresses.png')
     stress_im = ax2.imshow(str_img)
     midx = str_img.shape[0] / 2
     midy = str_img.shape[1] / 2

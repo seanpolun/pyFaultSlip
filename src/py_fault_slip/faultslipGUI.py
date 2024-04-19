@@ -31,9 +31,9 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
-import py_fault_slip
-import py_fault_slip.data_model as data_model
-from py_fault_slip.MainWindow_2d import Ui_MainWindow
+from src import py_fault_slip
+import src.py_fault_slip.data_model as data_model
+from src.py_fault_slip.MainWindow_2d import Ui_MainWindow
 
 mpl.use('Qt5Agg')
 
@@ -242,7 +242,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # fig.ax = self.orient_canvas.fig.axes
         # fig.ax = fig.add_axes([0, 0, 1, 1])
         # self.orient_canvas.fig.ax = fig.ax
-        str_img = plt.imread('../resources/h_stresses.png')
+        str_img = plt.imread('resources/h_stresses.png')
         stress_im = fig.axes[0].imshow(str_img)
         midx = str_img.shape[0] / 2
         midy = str_img.shape[1] / 2
@@ -259,7 +259,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.orient_canvas.fig.axes[0].cla()
         # ax = fig.axes
         # ax = fig.ax
-        str_img = plt.imread('../resources/h_stresses.png')
+        str_img = plt.imread('resources/h_stresses.png')
         stress_im = fig.axes[0].imshow(str_img)
         midx = str_img.shape[0] / 2
         midy = str_img.shape[1] / 2
