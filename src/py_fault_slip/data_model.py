@@ -430,6 +430,10 @@ class SegmentMC2dResult:
         else:
             ind_fail = (np.abs(self.ecdf[:, 0] - cutoff)).argmin()
             fail_prob = self.ecdf[ind_fail, 1]
+            # Catch case where there are few values, and cutoff is significantly less than first value in ECDF
+            if ind_fail == 0 & ((self.ecdf[0, 0] - cutoff) > 0.1):
+                fail_prob = 0.
+
         return fail_prob
 
     def append_results(self, results):
@@ -538,7 +542,19 @@ class Results2D:
                 out_ecdf = line[0].ecdf
                 ax.plot(out_ecdf[:, 0], out_ecdf[:, 1], 'k-')
 
-    def generate_gpd_df(self, crs, pres_cutoff=2.0, prob_cutoff=5):
+    def generate_gpd_df(self, crs, pres_cutoff=2.0, prob_cutoff=0.05):
+        """
+
+        Args:
+            crs: string representing EPSG code for CRS
+            pres_cutoff: float
+                Pressure for failure analysis (FSP mode)
+            prob_cutoff: float
+                Failure threshold for pressure forward modeling (0 - 1)
+
+        Returns:
+
+        """
         segs_geo = []
         line_id_list = []
         seg_id_list = []
@@ -563,14 +579,3 @@ class Results2D:
 
     def rebuild_seg_list(self):
         self.segment_list = [seg for line in self.lines for seg in line]
-
-
-
-
-
-
-
-
-
-
-
