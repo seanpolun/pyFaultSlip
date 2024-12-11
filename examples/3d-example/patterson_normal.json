@@ -1,0 +1,26 @@
+{
+    "input_data": [
+        {
+            "azunc": 2,
+            "depth": 5.0,
+            "dip": 65,
+            "dip_unc": 10,
+            "fail_percent": 0.05,
+            "flag": "mc",
+            "inc_unc": 0,
+            "mu": 0.6,
+            "mu_unc": 0.05,
+            "pf": 50.0,
+            "pfunc": 5.0,
+            "shMunc": 2.45,
+            "shmax": 16.3,
+            "shmaxaz": 70.0,
+            "shmin": 12.5,
+            "shminaz": 160.0,
+            "shmiunc": 1.875,
+            "sv": 20.0,
+            "svunc": 3.0,
+            "hydro": 9.0
+        }
+    ]
+}
